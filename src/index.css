@@ -1,0 +1,228 @@
+/* =========================
+   GLOBAL RESET
+========================= */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  min-height: 100vh;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+#root {
+  width: 100%;
+  min-height: 100vh;
+}
+
+/* =========================
+   THEMES
+========================= */
+
+body[data-theme="light"] {
+  background: #f8fafc;
+  color: #111827;
+}
+
+body[data-theme="dark"] {
+  background: #0f172a;
+  color: #f8fafc;
+}
+
+/* =========================
+   HEADER
+========================= */
+
+.header {
+  height: 60px;
+  background: #ffffff;
+  border-bottom: 1px solid #e5e7eb;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 20px;
+}
+
+body[data-theme="dark"] .header {
+  background: #1e293b;
+  border-bottom: 1px solid #334155;
+}
+
+/* LOGO STYLE */
+nav img,
+.header img {
+  height: 40px;
+  object-fit: contain;
+}
+
+/* =========================
+   SIDEBAR
+========================= */
+
+.sidebar {
+  width: 250px;
+  height: 100vh;
+  background: #0f172a;
+  color: #ffffff;
+  position: fixed;
+  left: 0;
+  top: 0;
+  padding: 20px;
+  overflow-y: auto;
+  transition: all 0.3s ease;
+}
+
+.sidebar a {
+  display: block;
+  color: #ffffff;
+  text-decoration: none;
+  padding: 10px;
+  margin-bottom: 5px;
+  border-radius: 8px;
+  transition: background 0.3s ease;
+}
+
+.sidebar a:hover {
+  background: #1e293b;
+}
+
+body[data-theme="dark"] .sidebar {
+  background: #020617;
+}
+
+/* =========================
+   MAIN CONTENT
+========================= */
+
+.main-content {
+  margin-left: 250px;
+  min-height: 100vh;
+  background: #f8fafc;
+  transition: margin-left 0.3s ease, background 0.3s ease;
+}
+
+body[data-theme="dark"] .main-content {
+  background: #0f172a;
+}
+
+/* =========================
+   CONTENT AREA
+========================= */
+
+.content {
+  padding: 20px;
+}
+
+.content h1 {
+  font-size: 30px;
+  margin-bottom: 10px;
+}
+
+.content p {
+  color: #64748b;
+}
+
+body[data-theme="dark"] .content p {
+  color: #cbd5e1;
+}
+
+/* =========================
+   CARD DESIGN
+========================= */
+
+.card {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 20px;
+  margin-top: 20px;
+}
+
+body[data-theme="dark"] .card {
+  background: #1e293b;
+  border: 1px solid #334155;
+}
+
+/* =========================
+   FORM ELEMENTS
+========================= */
+
+input,
+select,
+textarea {
+  padding: 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  width: 100%;
+  margin-top: 5px;
+}
+
+body[data-theme="dark"] input,
+body[data-theme="dark"] select,
+body[data-theme="dark"] textarea {
+  background: #1e293b;
+  color: #ffffff;
+  border: 1px solid #475569;
+}
+
+/* =========================
+   BUTTONS
+========================= */
+
+button {
+  cursor: pointer;
+  border: none;
+  border-radius: 8px;
+  transition: background 0.3s ease;
+}
+
+.logout-btn {
+  width: 100%;
+  padding: 10px;
+  background: #ef4444;
+  color: #ffffff;
+  margin-top: 20px;
+}
+
+.logout-btn:hover {
+  background: #dc2626;
+}
+
+/* =========================
+   RESPONSIVE (PC & MOBILE)
+========================= */
+
+@media (max-width: 768px) {
+  /* Mobile Header */
+  .header {
+    padding: 0 12px;
+  }
+
+  /* Mobile Content Adjustments */
+  .main-content {
+    margin-left: 0 !important;
+    width: 100%;
+  }
+
+  .content {
+    padding: 12px;
+  }
+
+  /* Cards, Forms aur Tables ko Mobile width par auto flex karein */
+  .card {
+    padding: 15px;
+    margin-top: 12px;
+  }
+
+  /* Multiple columns/flex items mobile par vertical stack honge */
+  .flex-container, 
+  .grid-container {
+    flex-direction: column !important;
+    grid-template-columns: 1fr !important;
+  }
+}
