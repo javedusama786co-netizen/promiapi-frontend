@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import { useGoogleLogin } from "@react-oauth/google";
-import { CountrySelect, BUSINESS_TYPES } from "./CountrySelect";
+import { CountrySelect, BUSINESS_TYPES } from "./Countryselect";
 
 function Register() {
   const [formData, setFormData] = useState({
