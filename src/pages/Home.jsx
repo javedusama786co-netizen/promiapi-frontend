@@ -4,8 +4,7 @@ import { motion, AnimatePresence, useMotionValue, useSpring, useTransform, useIn
 import axios from "axios";
 import logo from "../assets/logo.png";
 
-const API_BASE_URL = "http://localhost:5000";
-
+const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 /* ───────────── ICONS ───────────── */
 const stroke = (children, size = 24) => () => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{children}</svg>
