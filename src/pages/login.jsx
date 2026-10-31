@@ -217,34 +217,40 @@ function Login() {
       }
 
       setLoading(true);
-      window.FB.login(
-        async (response) => {
-          if (response.authResponse) {
-            window.FB.api('/me', { fields: 'id,first_name,last_name,email,picture' }, async (userInfo) => {
-              try {
-                const res = await axios.post(`${BACKEND_URL}/api/auth/social-login`, {
-                  provider: "facebook",
-                  email: userInfo.email || `${userInfo.id}@facebook.com`,
-                  firstName: userInfo.first_name || "Facebook",
-                  lastName: userInfo.last_name || "User",
-                  profilePic: userInfo.picture?.data?.url || "",
-                  providerId: userInfo.id
-                });
+      
+      try {
+        window.FB.login(
+          (response) => {
+            if (response && response.authResponse) {
+              window.FB.api('/me', { fields: 'id,first_name,last_name,email,picture' }, async (userInfo) => {
+                try {
+                  const res = await axios.post(`${BACKEND_URL}/api/auth/social-login`, {
+                    provider: "facebook",
+                    email: userInfo.email || `${userInfo.id}@facebook.com`,
+                    firstName: userInfo.first_name || "Facebook",
+                    lastName: userInfo.last_name || "User",
+                    profilePic: userInfo.picture?.data?.url || "",
+                    providerId: userInfo.id
+                  });
 
-                setLoading(false);
-                handleSuccessfulLogin(res.data);
-              } catch (err) {
-                setLoading(false);
-                setError(err.response?.data?.message || "Facebook authentication failed on server.");
-              }
-            });
-          } else {
-            setLoading(false);
-            setError("Facebook popup login was cancelled.");
-          }
-        },
-        { scope: 'email,public_profile' }
-      );
+                  setLoading(false);
+                  handleSuccessfulLogin(res.data);
+                } catch (err) {
+                  setLoading(false);
+                  setError(err.response?.data?.message || "Facebook authentication failed on server.");
+                }
+              });
+            } else {
+              setLoading(false);
+              setError("Facebook popup login was cancelled or blocked by browser.");
+            }
+          },
+          { scope: 'email,public_profile' }
+        );
+      } catch (err) {
+        setLoading(false);
+        setError("Failed to open Facebook login popup.");
+      }
       return;
     }
 

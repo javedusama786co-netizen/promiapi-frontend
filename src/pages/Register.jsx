@@ -214,7 +214,7 @@ function Register() {
     },
   });
 
-  // 🌐 REAL SOCIAL LOGIN HANDLER (Google / Facebook / Apple SDK Flow)
+  // 🌐 REAL SOCIAL LOGIN HANDLER (Google / Facebook / Apple Flow)
   const handleSocialLogin = (provider) => {
     setError("");
     if (provider === "google") {
@@ -229,44 +229,40 @@ function Register() {
       }
 
       setLoading(true);
-      window.FB.login(
-        async (response) => {
-          if (response.authResponse) {
-            window.FB.api('/me', { fields: 'id,first_name,last_name,email,picture' }, async (userInfo) => {
-              try {
-                const res = await axios.post(`${BACKEND_URL}/api/auth/social-login`, {
-                  provider: "facebook",
-                  email: userInfo.email || `${userInfo.id}@facebook.com`,
-                  firstName: userInfo.first_name || "Facebook",
-                  lastName: userInfo.last_name || "User",
-                  profilePic: userInfo.picture?.data?.url || "",
-                  providerId: userInfo.id
-                });
+      
+      try {
+        window.FB.login(
+          (response) => {
+            if (response && response.authResponse) {
+              window.FB.api('/me', { fields: 'id,first_name,last_name,email,picture' }, async (userInfo) => {
+                try {
+                  const res = await axios.post(`${BACKEND_URL}/api/auth/social-login`, {
+                    provider: "facebook",
+                    email: userInfo.email || `${userInfo.id}@facebook.com`,
+                    firstName: userInfo.first_name || "Facebook",
+                    lastName: userInfo.last_name || "User",
+                    profilePic: userInfo.picture?.data?.url || "",
+                    providerId: userInfo.id
+                  });
 
-                setLoading(false);
-                if (res.data.token) {
-                  localStorage.setItem("token", res.data.token);
-                  if (res.data.user) {
-                    localStorage.setItem("user", JSON.stringify(res.data.user));
-                    localStorage.setItem("user_role", res.data.user.role || "user");
-                    localStorage.setItem("user_email", res.data.user.email || userInfo.email);
-                    handlePostAuthRedirection(res.data.user);
-                  } else {
-                    window.location.href = "/onboarding";
-                  }
+                  setLoading(false);
+                  handleSuccessfulLogin(res.data);
+                } catch (err) {
+                  setLoading(false);
+                  setError(err.response?.data?.message || "Facebook authentication failed on server.");
                 }
-              } catch (err) {
-                setLoading(false);
-                setError(err.response?.data?.message || "Facebook authentication failed.");
-              }
-            });
-          } else {
-            setLoading(false);
-            setError("Facebook login was cancelled.");
-          }
-        },
-        { scope: 'email,public_profile' }
-      );
+              });
+            } else {
+              setLoading(false);
+              setError("Facebook popup login was cancelled or blocked by browser.");
+            }
+          },
+          { scope: 'email,public_profile' }
+        );
+      } catch (err) {
+        setLoading(false);
+        setError("Failed to open Facebook login popup.");
+      }
       return;
     }
 
@@ -274,7 +270,7 @@ function Register() {
       setLoading(true);
       try {
         const appleClientId = import.meta.env.VITE_APPLE_CLIENT_ID || "com.promiapi.auth";
-        const redirectUri = window.location.origin + "/register";
+        const redirectUri = window.location.origin + "/login";
         const appleAuthUrl = `https://appleid.apple.com/auth/authorize?client_id=${appleClientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code id_token&scope=name email&response_mode=popup`;
         
         const width = 500;
