@@ -138,7 +138,7 @@ function SocialIntegrations() {
     (typeof process !== "undefined" && process.env?.REACT_APP_BACKEND_URL) ||
     (window.location.hostname === "localhost"
       ? "http://localhost:5000"
-      : "https://unawake-oversized-moneybags.ngrok-free.dev");
+      : "https://api.promiapi.com");
 
   const WEBHOOK_CALLBACK_URL = `${BACKEND_URL}/api/webhook`;
 
