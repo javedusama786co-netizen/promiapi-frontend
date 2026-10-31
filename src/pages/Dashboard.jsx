@@ -4,9 +4,12 @@ import { useNavigate } from "react-router-dom";
 import axios from "axios";
 
 // Safe Vite + Fallback Environment URL Configuration
-const API_BASE_URL = 
-  (typeof import.meta !== "undefined" && import.meta.env?.VITE_API_URL) || 
-  "http://localhost:5000";
+const API_BASE_URL =
+  import.meta.env.VITE_BACKEND_URL ||
+  import.meta.env.VITE_API_URL ||
+  (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
+    ? "http://localhost:5000"
+    : "https://api.promiapi.com");
 
 function Dashboard() {
   const navigate = useNavigate();
