@@ -49,9 +49,11 @@ function Login() {
 
   // 🔑 Dynamic Backend Base URL
   const BACKEND_URL =
-    (typeof import.meta !== "undefined" && import.meta.env?.VITE_BACKEND_URL) ||
-    (typeof process !== "undefined" && process.env?.REACT_APP_BACKEND_URL) ||
-    "http://localhost:5000";
+  import.meta.env.VITE_BACKEND_URL ||
+  import.meta.env.VITE_API_URL ||
+  (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
+    ? "http://localhost:5000"
+    : "https://api.promiapi.com");
 
   // Helper function to handle shared session & route redirection post-login
   const handleSuccessfulLogin = (resData) => {
