@@ -394,7 +394,7 @@ function AppContent() {
 }
 
 // 🌐 GOOGLE OAUTH PROVIDER WRAPPER
-const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || "277523302863-9uv1uhu0se0sc2cgjkpr5r4u664jqcui.apps.googleusercontent.com";
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || "277523302863-3lccdghg4gt3dm9f7otf7setaceoipqc.apps.googleusercontent.com";
 
 function App() {
   return (
