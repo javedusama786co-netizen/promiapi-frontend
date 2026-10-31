@@ -148,6 +148,14 @@ function Onboarding() {
 
   const navigate = useNavigate();
 
+  // 🛡️ Secure Route Protection: Prevent direct URL access without token session
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    if (!token) {
+      navigate("/login", { replace: true });
+    }
+  }, [navigate]);
+
   // 🎬 3D tilt for the hero scene (UI only)
   const reduceMotion =
     typeof window !== "undefined" &&
@@ -168,11 +176,13 @@ function Onboarding() {
     mvY.set(0);
   };
 
-  // 🔑 Dynamic Backend Base URL
+  // 🔑 Fixed Dynamic Backend Base URL
   const BACKEND_URL =
-    (typeof import.meta !== "undefined" && import.meta.env?.VITE_BACKEND_URL) ||
-    (typeof process !== "undefined" && process.env?.REACT_APP_BACKEND_URL) ||
-    "http://localhost:5000";
+    import.meta.env.VITE_BACKEND_URL ||
+    import.meta.env.VITE_API_URL ||
+    (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
+      ? "http://localhost:5000"
+      : "https://api.promiapi.com");
 
   const validateStep1 = () => {
     const phoneDigits = phone.replace(/\D/g, "");
@@ -364,7 +374,7 @@ function Onboarding() {
         </div>
 
         <div className="lg-metrics">
-          <div><strong>Step {step + 1} of 3</strong><span>{step === 1 ? "Business Profile" : "Business Location"}</span></div>
+          <div><strong>Step {step} of 2</strong><span>{step === 1 ? "Business Profile" : "Business Location"}</span></div>
           <div><strong>Secure</strong><span>Data Encryption</span></div>
         </div>
       </section>
