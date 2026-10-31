@@ -26,7 +26,25 @@ function Register() {
     : "https://api.promiapi.com");
 
   useEffect(() => {
-    if (window.FB) {
+    // فیس بک SDK اسکرپٹ کو ڈائنامیکلی لوڈ کریں اگر یہ پہلے سے موجود نہ ہو
+    if (!document.getElementById("facebook-jssdk")) {
+      const script = document.createElement("script");
+      script.id = "facebook-jssdk";
+      script.src = "https://connect.facebook.net/en_US/sdk.js";
+      script.async = true;
+      script.defer = true;
+      script.onload = () => {
+        if (window.FB) {
+          window.FB.init({
+            appId: import.meta.env.VITE_FACEBOOK_APP_ID || "1543305467331355",
+            cookie: true,
+            xfbml: true,
+            version: "v18.0"
+          });
+        }
+      };
+      document.body.appendChild(script);
+    } else if (window.FB) {
       window.FB.init({
         appId: import.meta.env.VITE_FACEBOOK_APP_ID || "1543305467331355",
         cookie: true,
