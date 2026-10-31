@@ -3,7 +3,7 @@ import axios from "axios";
 import { io } from "socket.io-client";
 
 // 🌐 GLOBAL ACTIVE API URL CONFIGURATION
-const API_BASE_URL = "https://unawake-oversized-moneybags.ngrok-free.dev";
+const API_BASE_URL = "https://api.promiapi.com"; // Replace with your actual API base URL
 
 const cleanIdentifier = (idStr) => String(idStr || "").trim();
 
