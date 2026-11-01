@@ -27,7 +27,7 @@ function Login() {
       script.onload = () => {
         if (window.FB) {
           window.FB.init({
-            appId: import.meta.env.VITE_FACEBOOK_APP_ID || "1543305467331355",
+            appId: import.meta.env.VITE_FACEBOOK_APP_ID || "1144553121409101",
             cookie: true,
             xfbml: true,
             version: "v18.0"
@@ -37,7 +37,7 @@ function Login() {
       document.body.appendChild(script);
     } else if (window.FB) {
       window.FB.init({
-        appId: import.meta.env.VITE_FACEBOOK_APP_ID || "1543305467331355",
+        appId: import.meta.env.VITE_FACEBOOK_APP_ID || "1144553121409101",
         cookie: true,
         xfbml: true,
         version: "v18.0"
