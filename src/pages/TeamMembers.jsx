@@ -704,8 +704,7 @@ const CSS = `
 /*  TEAM MEMBERS PAGE                                                 */
 /* ================================================================== */
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ||
-  (window.location.hostname === "localhost" ? "https://api.promiapi.com" : window.location.origin);
+const API_BASE_URL = "https://api.promiapi.com";
 
 const getMemberLimitByPlan = (planInput) => {
   if (!planInput) return 1;
