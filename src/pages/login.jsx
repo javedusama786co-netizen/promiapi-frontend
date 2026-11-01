@@ -15,33 +15,36 @@ function Login() {
 
   const navigate = useNavigate();
 
-  // Initialize Facebook SDK on mount if available
+  // 🔌 Load Facebook + Apple SDKs once (only the SDKs; auth itself is verified by the backend)
   useEffect(() => {
-    // فیس بک SDK اسکرپٹ کو ڈائنامیکلی لوڈ کریں اگر یہ پہلے سے موجود نہ ہو
-    if (!document.getElementById("facebook-jssdk")) {
-      const script = document.createElement("script");
-      script.id = "facebook-jssdk";
-      script.src = "https://connect.facebook.net/en_US/sdk.js";
-      script.async = true;
-      script.defer = true;
-      script.onload = () => {
+    const fbAppId = import.meta.env.VITE_FACEBOOK_APP_ID || "1144553121409101";
+    const initFB = () => {
+      try {
         if (window.FB) {
-          window.FB.init({
-            appId: import.meta.env.VITE_FACEBOOK_APP_ID || "1144553121409101",
-            cookie: true,
-            xfbml: true,
-            version: "v18.0"
-          });
+          window.FB.init({ appId: fbAppId, cookie: true, xfbml: false, version: "v21.0" });
         }
-      };
-      document.body.appendChild(script);
-    } else if (window.FB) {
-      window.FB.init({
-        appId: import.meta.env.VITE_FACEBOOK_APP_ID || "1144553121409101",
-        cookie: true,
-        xfbml: true,
-        version: "v18.0"
-      });
+      } catch (e) {
+        console.error("Facebook SDK init failed:", e);
+      }
+    };
+    if (!document.getElementById("facebook-jssdk")) {
+      const fbScript = document.createElement("script");
+      fbScript.id = "facebook-jssdk";
+      fbScript.src = "https://connect.facebook.net/en_US/sdk.js";
+      fbScript.async = true;
+      fbScript.defer = true;
+      fbScript.onload = initFB;
+      document.body.appendChild(fbScript);
+    } else {
+      initFB();
+    }
+
+    if (!document.getElementById("apple-signin-sdk")) {
+      const apScript = document.createElement("script");
+      apScript.id = "apple-signin-sdk";
+      apScript.src = "https://appleid.cdn-apple.com/appleauth/static/jsapi/appleid/1/en_US/appleid.auth.js";
+      apScript.async = true;
+      document.body.appendChild(apScript);
     }
   }, []);
 
@@ -90,6 +93,7 @@ function Login() {
       const userData = {
         ...serverUser,
         username: displayName,
+        handle: serverUser.username || "",
         email: serverUser.email,
         role: serverUser.role || "Agent",
         id: serverUser.id || serverUser._id,
@@ -119,9 +123,14 @@ function Login() {
       window.dispatchEvent(new Event("tenantBrandingUpdated"));
       setShowGlobalLoader(true);
 
+      // New social users (or anyone who skipped it) must finish onboarding first
+      const needsOnboarding = userRole === "admin" && serverUser.onboardingCompleted === false;
+
       setTimeout(() => {
         let targetRoute = "/dashboard";
-        if (userRole === "admin") {
+        if (needsOnboarding) {
+          targetRoute = "/onboarding";
+        } else if (userRole === "admin") {
           targetRoute = "/admin-control-cluster";
         } else if (["manager", "agent"].includes(userRole)) {
           targetRoute = "/dashboard";
@@ -129,7 +138,7 @@ function Login() {
           targetRoute = "/agent-dashboard";
         }
         window.location.href = targetRoute;
-      }, 6000);
+      }, needsOnboarding ? 1200 : 6000);
     }
   };
 
@@ -163,38 +172,26 @@ function Login() {
     }
   };
 
-  // 🌐 REAL GOOGLE POPUP LOGIN HANDLER USING @react-oauth/google
+  // 🔐 SOCIAL AUTH (Google / Facebook / Apple)
+  // The browser only forwards the provider's TOKEN. The backend verifies it with the
+  // provider and reads the email / id itself, so nothing here can be forged.
+  const socialAuth = async (payload, label) => {
+    try {
+      setLoading(true);
+      setError("");
+      const res = await axios.post(`${BACKEND_URL}/api/auth/social-login`, payload);
+      setLoading(false);
+      handleSuccessfulLogin(res.data);
+    } catch (err) {
+      setLoading(false);
+      setError(err.response?.data?.message || `${label} authentication failed on server.`);
+    }
+  };
+
+  // 🌐 GOOGLE POPUP (@react-oauth/google)
   const googleLogin = useGoogleLogin({
-    onSuccess: async (tokenResponse) => {
-      try {
-        setLoading(true);
-        setError("");
-        
-        const userInfoRes = await axios.get(
-          "https://www.googleapis.com/oauth2/v3/userinfo",
-          {
-            headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
-          }
-        );
-
-        const { email, given_name, family_name, picture, sub } = userInfoRes.data;
-
-        const res = await axios.post(`${BACKEND_URL}/api/auth/social-login`, {
-          provider: "google",
-          email,
-          firstName: given_name || "Google",
-          lastName: family_name || "User",
-          profilePic: picture || "",
-          providerId: sub
-        });
-
-        setLoading(false);
-        handleSuccessfulLogin(res.data);
-      } catch (err) {
-        setLoading(false);
-        setError(err.response?.data?.message || "Google authentication failed on server.");
-      }
-    },
+    onSuccess: (tokenResponse) =>
+      socialAuth({ provider: "google", token: tokenResponse.access_token }, "Google"),
     onError: (errorResponse) => {
       console.error("Google Login Error:", errorResponse);
       setError("Google popup login was cancelled or failed.");
@@ -202,9 +199,9 @@ function Login() {
     },
   });
 
-  // 🌐 REAL SOCIAL LOGIN HANDLER (Google / Facebook / Apple Flow)
   const handleSocialLogin = (provider) => {
     setError("");
+
     if (provider === "google") {
       googleLogin();
       return;
@@ -215,37 +212,21 @@ function Login() {
         setError("Facebook SDK is loading or unavailable. Please check your network.");
         return;
       }
-
       setLoading(true);
-      
       try {
         window.FB.login(
           (response) => {
-            if (response && response.authResponse) {
-              window.FB.api('/me', { fields: 'id,first_name,last_name,email,picture' }, async (userInfo) => {
-                try {
-                  const res = await axios.post(`${BACKEND_URL}/api/auth/social-login`, {
-                    provider: "facebook",
-                    email: userInfo.email || `${userInfo.id}@facebook.com`,
-                    firstName: userInfo.first_name || "Facebook",
-                    lastName: userInfo.last_name || "User",
-                    profilePic: userInfo.picture?.data?.url || "",
-                    providerId: userInfo.id
-                  });
-
-                  setLoading(false);
-                  handleSuccessfulLogin(res.data);
-                } catch (err) {
-                  setLoading(false);
-                  setError(err.response?.data?.message || "Facebook authentication failed on server.");
-                }
-              });
+            if (response && response.authResponse && response.authResponse.accessToken) {
+              socialAuth(
+                { provider: "facebook", token: response.authResponse.accessToken },
+                "Facebook"
+              );
             } else {
               setLoading(false);
-              setError("Facebook popup login was cancelled or blocked by browser.");
+              setError("Facebook login was cancelled or blocked by the browser.");
             }
           },
-          { scope: 'email,public_profile' }
+          { scope: "email,public_profile" }
         );
       } catch (err) {
         setLoading(false);
@@ -255,23 +236,42 @@ function Login() {
     }
 
     if (provider === "apple") {
-      setLoading(true);
-      try {
-        const appleClientId = import.meta.env.VITE_APPLE_CLIENT_ID || "com.promiapi.auth";
-        const redirectUri = window.location.origin + "/login";
-        const appleAuthUrl = `https://appleid.apple.com/auth/authorize?client_id=${appleClientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code id_token&scope=name email&response_mode=popup`;
-        
-        const width = 500;
-        const height = 600;
-        const left = window.innerWidth / 2 - width / 2;
-        const top = window.innerHeight / 2 - height / 2;
-        
-        window.open(appleAuthUrl, "AppleSignin", `width=${width},height=${height},top=${top},left=${left}`);
-        setLoading(false);
-      } catch (err) {
-        setLoading(false);
-        setError("Apple sign-in popup failed to open.");
+      if (!window.AppleID) {
+        setError("Apple sign-in is still loading or is blocked. Please try again in a moment.");
+        return;
       }
+      (async () => {
+        try {
+          setLoading(true);
+          window.AppleID.auth.init({
+            clientId: import.meta.env.VITE_APPLE_CLIENT_ID || "com.promiapi.auth",
+            scope: "name email",
+            redirectURI: window.location.origin + "/login", // must match Apple developer console
+            state: "promiapi-signin",
+            usePopup: true,
+          });
+          const data = await window.AppleID.auth.signIn();
+          const idToken = data && data.authorization && data.authorization.id_token;
+          if (!idToken) throw new Error("No Apple identity token received.");
+          setLoading(false);
+          // Apple only sends the name the very first time, so forward it if present
+          await socialAuth(
+            {
+              provider: "apple",
+              token: idToken,
+              firstName: data.user?.name?.firstName || "",
+              lastName: data.user?.name?.lastName || "",
+            },
+            "Apple"
+          );
+        } catch (err) {
+          setLoading(false);
+          const code = err && err.error;
+          if (code !== "popup_closed_by_user" && code !== "user_cancelled_authorize") {
+            setError("Apple sign-in failed. Please try again.");
+          }
+        }
+      })();
     }
   };
 

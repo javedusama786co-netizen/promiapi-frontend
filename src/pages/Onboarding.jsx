@@ -153,7 +153,15 @@ function Onboarding() {
     const token = localStorage.getItem("token");
     if (!token) {
       navigate("/login", { replace: true });
+      return;
     }
+    // Already finished onboarding -> no need to see this page again
+    try {
+      const stored = JSON.parse(localStorage.getItem("user") || "{}");
+      if (stored && stored.onboardingCompleted === true) {
+        navigate("/dashboard", { replace: true });
+      }
+    } catch (_) { /* ignore broken localStorage */ }
   }, [navigate]);
 
   // 🎬 3D tilt for the hero scene (UI only)
@@ -264,25 +272,55 @@ function Onboarding() {
         headers: { Authorization: `Bearer ${token}` }
       });
 
-      if (res.data.success) {
-        // Update local storage user details
-        const storedUser = JSON.parse(localStorage.getItem("user") || "{}");
-        storedUser.companyName = companyName.trim();
-        storedUser.phone = phone.trim();
-        storedUser.teamSize = teamSize;
-        storedUser.settings = {
-          ...(storedUser.settings || {}),
-          ...(res.data.user?.settings || {}),
+      if (res.data && res.data.success) {
+        // Merge EVERYTHING the server saved (id, username, company, phone, settings...) into the session
+        const serverUser = res.data.user || {};
+        let storedUser = {};
+        try {
+          storedUser = JSON.parse(localStorage.getItem("user") || "{}");
+        } catch (_) {
+          storedUser = {};
+        }
+
+        const role = serverUser.role || storedUser.role || "Admin";
+        const mergedUser = {
+          ...storedUser,
+          ...serverUser,
+          id: serverUser.id || storedUser.id,
+          handle: serverUser.username || storedUser.handle || "",
+          username: companyName.trim(), // same display-name convention Login.jsx uses
+          email: serverUser.email || storedUser.email,
+          companyName: companyName.trim(),
+          phone: phone.trim(),
+          teamSize: teamSize,
+          role,
+          onboardingCompleted: true,
+          settings: {
+            ...(storedUser.settings || {}),
+            ...(serverUser.settings || {}),
+          },
         };
-        localStorage.setItem("user", JSON.stringify(storedUser));
+
+        localStorage.setItem("user", JSON.stringify(mergedUser));
+        localStorage.setItem("user_role", String(role).toLowerCase());
+        if (mergedUser.email) localStorage.setItem("user_email", mergedUser.email);
 
         setShowGlobalLoader(true);
         setTimeout(() => {
           window.location.href = "/dashboard";
         }, 1500);
+      } else {
+        setError((res.data && res.data.message) || "Failed to save details. Please try again.");
+        setLoading(false);
       }
     } catch (err) {
       console.error("❌ Onboarding Error:", err);
+      if (err.response?.status === 401) {
+        // session expired / invalid token -> sign in again
+        localStorage.removeItem("token");
+        navigate("/login", { replace: true });
+        return;
+      }
       setError(err.response?.data?.message || "Failed to save details. Please try again.");
       setLoading(false);
     }
