@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
@@ -11,10 +11,30 @@ const API_BASE_URL =
     ? "http://localhost:5000"
     : "https://api.promiapi.com");
 
+// 👤 Person's own name for the greeting (never the company / store name)
+const getPersonName = (u) => {
+  if (!u) return "User";
+  const full = `${u.firstName || ""} ${u.lastName || ""}`.trim();
+  const emailName = u.email ? String(u.email).split("@")[0] : "";
+  return full || u.name || u.fullName || u.handle || emailName || "User";
+};
+
+// 📨 Same queue math as the Campaigns page, so both screens always show the same number
+const getCampaignQueueStats = (camp) => {
+  const total = camp.totalContacts || camp.dispatchCount || camp.totalCount || camp.recipientsCount || 0;
+  const sent = camp.successCount !== undefined ? camp.successCount : camp.sentCount || 0;
+  const failed = camp.failureCount !== undefined ? camp.failureCount : camp.failedCount || 0;
+  const isFinished =
+    camp.status === "SENT" || camp.status === "SUCCESS" || camp.status === "COMPLETED" || camp.status === "FAILED";
+  const pending = isFinished ? 0 : Math.max(0, total - sent - failed);
+  return { sent, failed, pending };
+};
+
 function Dashboard() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [userName, setUserName] = useState("User");
+  const liveQueueRef = useRef(null); // latest live queue count (survives re-renders)
   
   // 📊 Live States Exact Backend Data Model Architecture
   const [stats, setStats] = useState({
@@ -73,13 +93,13 @@ function Dashboard() {
           if (profileRes.data && isMounted) {
             if (profileRes.data.success || profileRes.data.user) {
               const liveUser = profileRes.data.user || profileRes.data;
-              const realName = liveUser.name || liveUser.fullName || liveUser.companyName || liveUser.firstName || liveUser.username || "Real User";
+              const realName = getPersonName(liveUser);
               setUserName(realName);
             } else {
               const savedUser = localStorage.getItem("user");
               if (savedUser) {
                 const parsedUser = JSON.parse(savedUser);
-                const localName = parsedUser.name || parsedUser.fullName || parsedUser.companyName || parsedUser.firstName || parsedUser.username || "User";
+                const localName = getPersonName(parsedUser);
                 setUserName(localName);
               }
             }
@@ -91,7 +111,7 @@ function Dashboard() {
             if (savedUser) {
               try {
                 const parsedUser = JSON.parse(savedUser);
-                const localName = parsedUser.name || parsedUser.fullName || parsedUser.companyName || parsedUser.firstName || parsedUser.username || "User";
+                const localName = getPersonName(parsedUser);
                 setUserName(localName);
               } catch {
                 setUserName("User");
@@ -139,7 +159,11 @@ function Dashboard() {
               totalBotReplies: Number(incoming.botReplies ?? incoming.bot_replies ?? incoming.totalBotReplies ?? incoming.replies ?? 0),
               totalBotFlows: Number(incoming.flows ?? incoming.botFlows ?? incoming.totalBotFlows ?? incoming.bot_flows ?? 0),
               activeTeamMembers: Number(incoming.activeTeamMembers ?? incoming.teamMembers ?? 0),
-              messagesInQueue: Number(incoming.queue ?? incoming.messagesInQueue ?? 0),
+              // live value from the campaigns feed wins over the one-time server number
+              messagesInQueue:
+                liveQueueRef.current !== null
+                  ? liveQueueRef.current
+                  : Number(incoming.queue ?? incoming.messagesInQueue ?? 0),
               messagesProcessed: Number(incoming.processed ?? incoming.messagesProcessed ?? 0)
             });
             
@@ -162,6 +186,40 @@ function Dashboard() {
     fetchDashboardData();
     return () => { isMounted = false; };
   }, [navigate]);
+
+  // 🔴 LIVE QUEUE: refresh "Messages in Queue" every few seconds while campaigns are running
+  useEffect(() => {
+    let isMounted = true;
+
+    const refreshLiveQueue = async () => {
+      if (document.hidden) return; // don't poll in background tabs
+      const token = localStorage.getItem("token");
+      if (!token) return;
+      try {
+        const res = await axios.get(`${API_BASE_URL}/api/campaigns`, {
+          headers: { Authorization: `Bearer ${token}`, "ngrok-skip-browser-warning": "true" }
+        });
+        let list = [];
+        if (res.data && Array.isArray(res.data.campaigns)) list = res.data.campaigns;
+        else if (Array.isArray(res.data)) list = res.data;
+
+        let queued = 0;
+        list.forEach((c) => { queued += getCampaignQueueStats(c).pending; });
+
+        liveQueueRef.current = queued;
+        if (isMounted) setStats((prev) => ({ ...prev, messagesInQueue: queued }));
+      } catch (err) {
+        console.warn("⚠️ Live queue refresh skipped:", err.message);
+      }
+    };
+
+    refreshLiveQueue();
+    const queueInterval = setInterval(refreshLiveQueue, 4000);
+    return () => {
+      isMounted = false;
+      clearInterval(queueInterval);
+    };
+  }, []);
 
   // Vector Inline Icons Collection
   const inlineIcons = {
