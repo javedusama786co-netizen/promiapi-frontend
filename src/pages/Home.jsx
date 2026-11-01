@@ -41,15 +41,12 @@ const Icons = {
   )
 };
 
-// Official Meta logo. Put the file you download from Meta Brand Resources at  public/meta-logo.svg
-// (use Meta's original blue logo; "white" tone turns it into the single-colour white version for dark backgrounds)
 const META_LOGO_SRC = "/meta-logo.svg";
 const MetaLogo = ({ size = 28, id = "m", tone = "auto" }) => {
   const [ok, setOk] = useState(true);
   if (ok) {
     return <img src={META_LOGO_SRC} alt="Meta" height={size} className={`meta-img ${tone === "white" ? "w" : tone === "auto" ? "a" : ""}`} style={{ height: size, width: "auto" }} onError={() => setOk(false)} />;
   }
-  // temporary placeholder shown only until the official file exists
   return (
     <svg width={size * 1.6} height={size} viewBox="0 0 64 40" fill="none" aria-label="Meta">
       <defs><linearGradient id={`mg-${id}`} x1="0" y1="0" x2="1" y2="0"><stop offset="0" stopColor="#0064E0" /><stop offset="1" stopColor="#0866FF" /></linearGradient></defs>
@@ -91,7 +88,6 @@ const NeuralBg = () => {
     const cv = ref.current;
     if (!cv) return;
     const ctx = cv.getContext("2d");
-    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     let w = 0, h = 0, raf, pts = [];
     const m = { x: -999, y: -999 };
     const mv = (e) => { const r = cv.getBoundingClientRect(); m.x = e.clientX - r.left; m.y = e.clientY - r.top; };
@@ -105,15 +101,15 @@ const NeuralBg = () => {
       ctx.clearRect(0, 0, w, h);
       for (let i = 0; i < pts.length; i++) {
         const p = pts[i];
-        if (!reduce) { p.x += p.vx; p.y += p.vy; if (p.x < 0 || p.x > w) p.vx *= -1; if (p.y < 0 || p.y > h) p.vy *= -1; }
+        p.x += p.vx; p.y += p.vy; if (p.x < 0 || p.x > w) p.vx *= -1; if (p.y < 0 || p.y > h) p.vy *= -1;
         for (let j = i + 1; j < pts.length; j++) {
           const q = pts[j], d = Math.hypot(p.x - q.x, p.y - q.y);
           if (d < 140) { ctx.strokeStyle = `rgba(61,214,255,${(1 - d / 140) * 0.28})`; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.stroke(); }
         }
         ctx.fillStyle = "rgba(139,172,255,0.8)"; ctx.beginPath(); ctx.arc(p.x, p.y, 1.8, 0, 7); ctx.fill();
       }
-      for (const p of pts) { const d = Math.hypot(p.x - m.x, p.y - m.y); if (d < 170) { ctx.strokeStyle = `rgba(139,92,246,${(1 - d / 170) * 0.65})`; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(m.x, m.y); ctx.stroke(); if (!reduce) { p.x += (m.x - p.x) * 0.012; p.y += (m.y - p.y) * 0.012; } } }
-      if (!reduce) raf = requestAnimationFrame(draw);
+      for (const p of pts) { const d = Math.hypot(p.x - m.x, p.y - m.y); if (d < 170) { ctx.strokeStyle = `rgba(139,92,246,${(1 - d / 170) * 0.65})`; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(m.x, m.y); ctx.stroke(); p.x += (m.x - p.x) * 0.012; p.y += (m.y - p.y) * 0.012; } }
+      raf = requestAnimationFrame(draw);
     };
     resize(); draw();
     window.addEventListener("resize", resize);
@@ -129,7 +125,6 @@ const Reveal = ({ children, d = 0, className = "", x = 0 }) => (
   </motion.div>
 );
 
-// 🖱️ Cursor: comet trail + magnetic dot + context label pill (desktop only)
 const cursorLabel = (el) => {
   if (!el || !el.closest) return "";
   if (el.closest("input,textarea")) return "Type";
@@ -148,11 +143,10 @@ const Cursor = () => {
   const [down, setDown] = useState(false);
   useEffect(() => {
     if (!on) return;
-    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const c = cv.current, ctx = c.getContext("2d");
     const pts = []; let raf;
     const resize = () => { c.width = window.innerWidth; c.height = window.innerHeight; };
-    const mv = (e) => { x.set(e.clientX); y.set(e.clientY); if (!reduce) { pts.push({ x: e.clientX, y: e.clientY, t: performance.now() }); if (pts.length > 40) pts.shift(); } };
+    const mv = (e) => { x.set(e.clientX); y.set(e.clientY); pts.push({ x: e.clientX, y: e.clientY, t: performance.now() }); if (pts.length > 40) pts.shift(); };
     const ov = (e) => setLabel(cursorLabel(e.target));
     const dn = () => setDown(true), up = () => setDown(false);
     const tick = (now) => {
@@ -187,15 +181,13 @@ const Cursor = () => {
   );
 };
 
-// Mouse-tilt helper
 const useTilt = (range) => {
   const mx = useMotionValue(0), my = useMotionValue(0);
   const rx = useSpring(useTransform(my, [-0.5, 0.5], [range, -range]), { stiffness: 150, damping: 20 });
   const ry = useSpring(useTransform(mx, [-0.5, 0.5], [-range, range]), { stiffness: 150, damping: 20 });
-  const reduce = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   return {
     rx, ry,
-    onMouseMove: (e) => { if (reduce) return; const r = e.currentTarget.getBoundingClientRect(); mx.set((e.clientX - r.left) / r.width - 0.5); my.set((e.clientY - r.top) / r.height - 0.5); },
+    onMouseMove: (e) => { const r = e.currentTarget.getBoundingClientRect(); mx.set((e.clientX - r.left) / r.width - 0.5); my.set((e.clientY - r.top) / r.height - 0.5); },
     onMouseLeave: () => { mx.set(0); my.set(0); }
   };
 };
@@ -224,7 +216,6 @@ function Home() {
   const [isAiTyping, setIsAiTyping] = useState(false);
   const [faqOpen, setFaqOpen] = useState(0);
 
-  // 🟢 Chat animation loop (unchanged)
   useEffect(() => {
     let timer1, timer2;
     if (visibleCount === 1) {
@@ -383,13 +374,11 @@ function Home() {
       <style>{CSS}</style>
       <Cursor />
 
-      {/* 🟢 FLOATING WHATSAPP */}
       <motion.a href={whatsappUrl} target="_blank" rel="noopener noreferrer" className="wa-float" title="Chat with us on WhatsApp" aria-label="Chat with us on WhatsApp"
         initial={{ scale: 0, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} whileHover={{ scale: 1.1, y: -3 }} whileTap={{ scale: 0.92 }} transition={{ type: "spring", stiffness: 260, damping: 20 }}>
         <Icons.whatsappOfficial />
       </motion.a>
 
-      {/* 🚀 HERO */}
       <header className="hero">
         <NeuralBg />
         <div className="aurora a1" /><div className="aurora a2" /><div className="grid-fade" />
@@ -452,14 +441,12 @@ function Home() {
         </div>
       </header>
 
-      {/* 🛡️ TRUST MARQUEE */}
       <div className="marq" aria-label="Trust and compliance highlights">
         <div className="marq-t">
           {[...trustBadges, ...trustBadges].map((b, i) => <span className="mi" key={i}>{b[0]}{b[1]}</span>)}
         </div>
       </div>
 
-      {/* 📊 STATS STRIP */}
       <section className="strip">
         <motion.div className="wrap stats-grid" variants={containerVariants} initial="hidden" whileInView="visible" viewport={{ once: true, margin: "-100px" }}>
           {stats.map((stat, i) => (
@@ -472,7 +459,6 @@ function Home() {
         </motion.div>
       </section>
 
-      {/* 🧭 HOW IT WORKS */}
       <section className="sec">
         <div className="wrap">
           <Reveal className="head center">
@@ -489,7 +475,6 @@ function Home() {
         </div>
       </section>
 
-      {/* 📈 GROWTH */}
       <section className="sec">
         <div className="wrap">
           <Reveal className="head center">
@@ -535,7 +520,6 @@ function Home() {
         </div>
       </section>
 
-      {/* 🌐 OMNICHANNEL */}
       <section className="sec alt">
         <div className="wrap omni-grid">
           <Reveal x={-30}>
@@ -559,7 +543,9 @@ function Home() {
             <div className="omni-stage" onMouseMove={omniTilt.onMouseMove} onMouseLeave={omniTilt.onMouseLeave}>
               <motion.div className="omni" style={{ rotateX: omniTilt.rx, rotateY: omniTilt.ry }}>
                 <svg viewBox="0 0 380 380" className="omni-lines">
-                  <path d="M42,52 Q120,120 190,190" stroke="#25D366" /><path d="M338,52 Q260,120 190,190" stroke="#0084FF" /><path d="M190,338 L190,190" stroke="#d62976" />
+                  <path d="M42,52 Q120,120 190,190" stroke="#25D366" />
+                  <path d="M338,52 Q260,120 190,190" stroke="#0084FF" />
+                  <path d="M190,338 L190,190" stroke="#d62976" />
                 </svg>
                 <div className="inbox">
                   <div className="inbox-h"><b>Team Inbox</b><span><i /> 3 online</span></div>
@@ -586,7 +572,6 @@ function Home() {
         </div>
       </section>
 
-      {/* 🤝 META PARTNER */}
       <section className="sec">
         <div className="wrap">
           <Reveal className="head center">
@@ -621,7 +606,6 @@ function Home() {
         </div>
       </section>
 
-      {/* 🔒 SECURITY & RELIABILITY */}
       <section className="sec">
         <div className="wrap">
           <Reveal className="head center">
@@ -639,7 +623,6 @@ function Home() {
         </div>
       </section>
 
-      {/* 💥 FEATURES (bento) */}
       <section id="features" className="sec alt">
         <div className="wrap">
           <Reveal className="head center">
@@ -661,7 +644,6 @@ function Home() {
         </div>
       </section>
 
-      {/* 🧠 AI SECTION */}
       <section className="sec">
         <div className="wrap ai-grid">
           <Reveal x={-30}>
@@ -696,7 +678,6 @@ function Home() {
         </div>
       </section>
 
-      {/* 💬 TESTIMONIALS */}
       <section className="sec alt">
         <div className="wrap">
           <Reveal className="head center"><h2>Trusted by teams that sell on WhatsApp</h2></Reveal>
@@ -712,7 +693,6 @@ function Home() {
         </div>
       </section>
 
-      {/* ❓ FAQ */}
       <section className="sec alt">
         <div className="wrap">
           <Reveal className="head center">
@@ -736,7 +716,6 @@ function Home() {
         </div>
       </section>
 
-      {/* 📬 CONTACT */}
       <section id="contact" className="sec">
         <div className="wrap contact-grid">
           <Reveal x={-30}>
@@ -761,7 +740,6 @@ function Home() {
         </div>
       </section>
 
-      {/* 💰 PRICING */}
       <section id="pricing" className="sec alt">
         <div className="wrap">
           <Reveal className="head center">
@@ -822,7 +800,6 @@ function Home() {
         </div>
       </section>
 
-      {/* 🤝 REAL PEOPLE */}
       <section className="sec" style={{ paddingBottom: 0 }}>
         <div className="wrap">
           <Reveal className="panel care">
@@ -838,7 +815,6 @@ function Home() {
         </div>
       </section>
 
-      {/* ⚡ FINAL CTA */}
       <section className="sec">
         <div className="wrap">
           <Reveal className="cta">
@@ -853,7 +829,6 @@ function Home() {
         </div>
       </section>
 
-      {/* 🌐 FOOTER */}
       <footer className="foot">
         <div className="wrap foot-grid">
           <div>
@@ -899,7 +874,7 @@ const CSS = `
 
 /* hero */
 .hero{position:relative;padding:130px 0 110px;overflow:hidden;background:radial-gradient(1200px 600px at 70% -10%,rgba(8,102,255,.18),transparent 60%),var(--bg)}
-.neural{position:absolute;inset:0;width:100%;height:100%;opacity:.75;pointer-events:none}
+.neural{position:absolute;inset:0;width:100%;height:100%;opacity:.75;pointer-events:none;z-index:1}
 .hx[data-theme=light] .neural{opacity:.35}
 .aurora{position:absolute;border-radius:50%;filter:blur(110px);pointer-events:none}
 .a1{width:460px;height:460px;left:-6%;top:-12%;background:rgba(8,102,255,.35);animation:drift 15s ease-in-out infinite}
@@ -911,7 +886,7 @@ const CSS = `
 .hero-h1{font-size:clamp(36px,5.6vw,68px);font-weight:800;letter-spacing:-2px;line-height:1.04;margin-bottom:24px}
 .trust-row{display:flex;gap:22px;flex-wrap:wrap;margin-top:34px;color:var(--sub);font-size:14px;font-weight:600}
 .trust-row span{display:inline-flex;align-items:center;gap:8px}.trust-row svg{width:18px;height:18px;color:var(--cy)}
-.phone-stage{perspective:1600px;display:flex;justify-content:center}
+.phone-stage{perspective:1600px;display:flex;justify-content:center;position:relative;z-index:5;overflow:visible;padding:40px 60px}
 .phone-3d{position:relative;transform-style:preserve-3d;will-change:transform}
 .phone{width:320px;background:#0b1120;border-radius:38px;padding:11px;border:1px solid rgba(255,255,255,.14);box-shadow:0 50px 90px -20px rgba(0,0,0,.7),0 0 80px -10px var(--glow);transform:translateZ(30px)}
 .phone-bar{background:#0f1a2e;border-radius:28px 28px 0 0;padding:14px 16px;display:flex;align-items:center;gap:12px;color:#fff}
@@ -924,11 +899,11 @@ const CSS = `
 .bub.ai{align-self:flex-end;background:linear-gradient(135deg,#0b5f4e,#0e7a5f);border-radius:14px 14px 4px 14px}
 .ticks{color:#6fd3ff;font-size:11px;margin-left:6px;font-weight:700}
 .dots{display:flex;gap:4px;padding:4px 2px}.dots i{width:6px;height:6px;border-radius:50%;background:#bdf5dc;animation:bounce 1.2s infinite ease-in-out}.dots i:nth-child(2){animation-delay:.15s}.dots i:nth-child(3){animation-delay:.3s}
-.chip{position:absolute;background:rgba(15,22,41,.85);backdrop-filter:blur(12px);border:1px solid rgba(148,163,184,.22);border-radius:14px;padding:10px 14px;font-size:12.5px;color:#fff;box-shadow:0 20px 40px rgba(0,0,0,.35);white-space:nowrap;z-index:5;display:flex;flex-direction:column;gap:3px}
+.chip{position:absolute;background:rgba(15,22,41,.85);backdrop-filter:blur(12px);border:1px solid rgba(148,163,184,.22);border-radius:14px;padding:10px 14px;font-size:12.5px;color:#fff;box-shadow:0 20px 40px rgba(0,0,0,.35);white-space:nowrap;z-index:10;display:flex;flex-direction:column;gap:3px}
 .hx[data-theme=light] .chip{background:rgba(255,255,255,.9);color:#0a1226}
 .chip span{color:var(--sub);font-size:11.5px}.chip.c3{flex-direction:row;align-items:center;gap:8px}
 .chip .bar{height:4px;border-radius:4px;background:rgba(255,255,255,.1);overflow:hidden;margin-top:3px}.chip .bar i{display:block;height:100%;background:linear-gradient(90deg,#0866FF,#3DD6FF);border-radius:4px;animation:grow 2.4s ease-in-out infinite alternate}
-.c1{top:30px;left:-150px;--tz:120px}.c2{bottom:70px;left:-160px;--tz:140px}.c3{top:120px;right:-150px;--tz:110px}
+.c1{top:10px;left:-40px;--tz:120px}.c2{bottom:30px;left:-50px;--tz:140px}.c3{top:80px;right:-40px;--tz:110px}
 .hero-float{animation:float 4.6s ease-in-out infinite var(--d,0s)}
 
 /* strip */
@@ -943,8 +918,8 @@ const CSS = `
 .num{font:800 34px 'Bricolage Grotesque',sans-serif;color:var(--hd);line-height:1}.lbl{font-size:13.5px;color:var(--sub);font-weight:600;margin-top:6px}
 .legend{display:flex;gap:22px;flex-wrap:wrap;margin-bottom:14px;font-size:13px;color:var(--sub)}.legend span{display:flex;align-items:center;gap:8px}
 .legend .dash{width:18px;border-top:3px dashed #64748b}.legend .solid{width:18px;height:3px;border-radius:2px;background:linear-gradient(90deg,#0866FF,#3DD6FF)}
-.chart{position:relative}.chart svg{width:100%;height:auto;display:block}
-.peak{position:absolute;left:89%;top:3%}.peak .dot,.peak .ring{position:absolute;width:12px;height:12px;border-radius:50%;left:0;top:0}.peak .dot{background:var(--cy)}.peak .ring{border:2px solid var(--cy);animation:ping 1.8s ease-out infinite}
+.chart{position:relative;padding-right:20px}.chart svg{width:100%;height:auto;display:block}
+.peak{position:absolute;left:82%;top:3%}.peak .dot,.peak .ring{position:absolute;width:12px;height:12px;border-radius:50%;left:0;top:0}.peak .dot{background:var(--cy)}.peak .ring{border:2px solid var(--cy);animation:ping 1.8s ease-out infinite}
 .peak .tag{position:absolute;top:-8px;left:20px;white-space:nowrap;background:linear-gradient(120deg,#0866FF,#3DD6FF);color:#fff;font-weight:800;font-size:12.5px;padding:5px 10px;border-radius:8px;box-shadow:0 10px 24px rgba(8,102,255,.45)}
 
 /* omni */
@@ -1036,7 +1011,6 @@ const CSS = `
 
 .wa-float{position:fixed;bottom:28px;right:28px;width:58px;height:58px;border-radius:50%;background:var(--gr);color:#fff;display:grid;place-items:center;z-index:9999;box-shadow:0 12px 28px -6px rgba(37,211,102,.55)}
 
-
 /* light-mode depth: dark hero/cta/footer, tinted sections, coloured shadows */
 .hx[data-theme=light] :is(.hero,.cta,.foot){--bg:#05070E;--s1:#0A0F1E;--s2:#0F1629;--ln:rgba(148,163,184,.14);--tx:#DDE3F2;--sub:#8E9AB7;--hd:#fff;--glow:rgba(8,102,255,.35)}
 .hx[data-theme=light] :is(.hero,.cta) .neural{opacity:.75}
@@ -1045,6 +1019,7 @@ const CSS = `
 .hx[data-theme=light] .sec.alt{background:linear-gradient(180deg,#DCE6FA,#D2DEF6)}
 .hx[data-theme=light] .strip{background:linear-gradient(90deg,#DCE6FA,#E2E2FA)}
 .hx[data-theme=light] .marq{background:#DCE6FA}
+
 /* cursor */
 .hxc{position:fixed;left:0;top:0;pointer-events:none;z-index:10000}
 .hxc-trail{inset:0;width:100vw;height:100vh;z-index:9998}
@@ -1053,15 +1028,18 @@ const CSS = `
 .meta-img{display:block;flex-shrink:0}.meta-img.w{filter:brightness(0) invert(1)}.hx[data-theme=dark] .meta-img.a{filter:brightness(0) invert(1)}
 .hxc-spot{width:560px;height:560px;margin:-280px 0 0 -280px;border-radius:50%;background:radial-gradient(circle,rgba(8,102,255,.17),transparent 65%);z-index:40}
 @media(pointer:coarse){.hxc{display:none}}
+
 /* trust marquee */
 .marq{overflow:hidden;padding:18px 0;background:var(--s1);border-bottom:1px solid var(--ln);-webkit-mask-image:linear-gradient(90deg,transparent,#000 8%,#000 92%,transparent);mask-image:linear-gradient(90deg,transparent,#000 8%,#000 92%,transparent)}
 .marq-t{display:flex;gap:14px;width:max-content;animation:marq 40s linear infinite}.marq:hover .marq-t{animation-play-state:paused}
 .mi{display:inline-flex;align-items:center;gap:10px;padding:10px 18px;border-radius:99px;border:1px solid var(--ln);background:var(--s2);color:var(--hd);font-weight:600;font-size:14px;white-space:nowrap}.mi svg{width:18px;height:18px;color:var(--cy)}
+
 /* social proof */
 .proof{display:flex;align-items:center;gap:14px;margin-top:30px}
 .stack{display:flex}.stack img{width:44px;height:44px;border-radius:50%;object-fit:cover;border:2px solid var(--bg);margin-left:-12px;background:var(--s2)}.stack img:first-child{margin-left:0}
 .stars{color:#fbbf24;letter-spacing:2px;font-size:15px}.proof span{display:block;color:var(--sub);font-size:13.5px;max-width:340px}
 .trust-row{margin-top:26px}
+
 /* steps, trust cards, faq */
 .steps{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
 .step,.trustc,.faq-i{position:relative;overflow:hidden;background:var(--s2);border:1px solid var(--ln)}
@@ -1082,11 +1060,21 @@ const CSS = `
 .faq-q i{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:rgba(8,102,255,.16);color:var(--cy);font-style:normal;font-size:18px;flex-shrink:0;transition:transform .3s}.faq-i.open .faq-q i{transform:rotate(45deg)}
 .faq-a{position:relative;padding:0 24px 22px;color:var(--sub);font-size:15.5px;line-height:1.7}
 .care{display:flex;align-items:center;justify-content:space-between;gap:30px;flex-wrap:wrap;padding:34px 40px}
-@keyframes marq{to{transform:translateX(-50%)}}
-@media(max-width:1024px){.sec-grid{grid-template-columns:1fr 1fr}.steps{grid-template-columns:1fr}}
-@media(max-width:680px){.sec-grid{grid-template-columns:1fr}.care{padding:26px 18px}.proof{flex-wrap:wrap}.faq-q{padding:18px}}
-@media(prefers-reduced-motion:reduce){.marq-t{animation:none!important}}
-/* plan cards */
+
+/* Keyframes animations enabled explicitly */
+@keyframes marq{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+@keyframes bdr{to{background-position:0 0,300% 0}}
+@keyframes drift{0%,100%{transform:translate(0,0)}50%{transform:translate(40px,-30px)}}
+@keyframes float{0%,100%{transform:translateZ(var(--tz,0px)) translateY(0)}50%{transform:translateZ(var(--tz,0px)) translateY(-10px)}}
+@keyframes bounce{0%,80%,100%{transform:translateY(0);opacity:.4}40%{transform:translateY(-4px);opacity:1}}
+@keyframes ping{0%{transform:scale(.8);opacity:.7}100%{transform:scale(2.4);opacity:0}}
+@keyframes dash{0%{stroke-dashoffset:0}100%{stroke-dashoffset:-28}}
+@keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
+@keyframes shine{0%{left:-60%}55%,100%{left:130%}}
+@keyframes grow{from{width:40%}to{width:96%}}
+@keyframes pulse{0%,100%{transform:scale(1);opacity:.7}50%{transform:scale(1.05);opacity:1}}
+
+/* Plan cards */
 .plan{position:relative;width:100%;padding:30px 26px 26px;border-radius:28px;background:linear-gradient(180deg,var(--s2),var(--s1));border:1px solid var(--ln);display:flex;flex-direction:column;justify-content:space-between;gap:28px;transition:border-color .3s,box-shadow .3s}
 .plan>*{position:relative}
 .plan::before{content:"";position:absolute;inset:0;border-radius:inherit;background:radial-gradient(340px circle at var(--mx,50%) var(--my,0%),rgba(8,102,255,.2),transparent 60%);opacity:0;transition:opacity .3s;pointer-events:none}
@@ -1110,17 +1098,6 @@ const CSS = `
 .plan-btn{width:100%;padding:16px}
 .plan.is-current .plan-btn{background:rgba(37,211,102,.12);color:#4ade80;border-color:rgba(37,211,102,.4);box-shadow:none}
 .plan-note{display:flex;flex-wrap:wrap;gap:10px 26px;justify-content:center;margin-top:36px;color:var(--sub);font-size:13.5px;font-weight:600}
-@keyframes bdr{to{background-position:0 0,300% 0}}
-@media(prefers-reduced-motion:reduce){.plan.pop{animation:none}}
-@keyframes drift{0%,100%{transform:translate(0,0)}50%{transform:translate(40px,-30px)}}
-@keyframes float{0%,100%{transform:translateZ(var(--tz,0px)) translateY(0)}50%{transform:translateZ(var(--tz,0px)) translateY(-10px)}}
-@keyframes bounce{0%,80%,100%{transform:translateY(0);opacity:.4}40%{transform:translateY(-4px);opacity:1}}
-@keyframes ping{0%{transform:scale(.8);opacity:.7}100%{transform:scale(2.4);opacity:0}}
-@keyframes dash{to{stroke-dashoffset:-28}}
-@keyframes spin{to{transform:rotate(360deg)}}
-@keyframes shine{0%{left:-60%}55%,100%{left:130%}}
-@keyframes grow{from{width:40%}to{width:96%}}
-@keyframes pulse{0%,100%{transform:scale(1);opacity:.7}50%{transform:scale(1.05);opacity:1}}
 
 @media(max-width:1024px){
  .hero-grid,.omni-grid,.ai-grid,.contact-grid,.growth,.trust{grid-template-columns:1fr;gap:44px}
@@ -1132,9 +1109,6 @@ const CSS = `
  .bento,.testi-grid,.foot-grid,.form-row{grid-template-columns:1fr}.fcard.wide{grid-column:auto}
  .phone{width:min(310px,86vw)}.row .btn{width:100%}.wa-float{width:52px;height:52px;bottom:16px;right:16px}
  .omni-wrap{zoom:.8}.vs{width:min(270px,80vw)}.cta{padding:60px 20px;border-radius:24px}
-}
-@media(prefers-reduced-motion:reduce){
- .aurora,.hero-float,.orb,.node,.ring,.seal-ring,.shine,.dots i,.omni-lines path,.peak .ring,.chip .bar i{animation:none!important}
 }
 `;
 
