@@ -139,12 +139,12 @@ function Integrations() {
   const [testSuccessMessage, setTestSuccessMessage] = useState("");
 
   // 🌐 PUBLIC NGROK URL FALLBACK
-  const NGROK_BASE_URL = "https://unawake-oversized-moneybags.ngrok-free.dev";
+  const API_BASE_URL = "https://api.promiapi.com";
 
   const backendUrl =
     (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_BACKEND_URL) ||
     (typeof process !== "undefined" && process.env && process.env.REACT_APP_BACKEND_URL) ||
-    NGROK_BASE_URL;
+    API_BASE_URL;
 
   // 🔄 REAL-TIME SUBSCRIPTION STATE SYNC
   useEffect(() => {

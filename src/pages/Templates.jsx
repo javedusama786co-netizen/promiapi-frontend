@@ -5,7 +5,7 @@ import axios from "axios";
 /*  Constants                                                                 */
 /* -------------------------------------------------------------------------- */
 
-const API_URL = "http://localhost:5000/api/templates";
+const API_URL = "http://api.promiapi.com/api/templates";
 const META_MANAGER_URL = "https://business.facebook.com/wa/manage/message-templates/";
 
 const EMPTY_FORM = {

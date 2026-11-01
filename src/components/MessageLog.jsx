@@ -3,7 +3,7 @@ import axios from "axios";
 import { motion, AnimatePresence, MotionConfig } from "framer-motion";
 
 /* ───────────── Config ───────────── */
-const API_BASE = "https://unawake-oversized-moneybags.ngrok-free.dev/api/message-logs";
+const API_BASE = "https://api.promiapi.com/api/message-logs";
 const PAGE_SIZE = 10;
 const POLL_MS = 10000;
 const DIRECT = "Direct message";

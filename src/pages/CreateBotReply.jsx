@@ -3,7 +3,7 @@ import axios from "axios";
 import { useNavigate, useLocation } from "react-router-dom";
 
 // Move to an env variable (VITE_API_URL / REACT_APP_API_URL) for production builds.
-const API_BASE_URL = "http://localhost:5000";
+const API_BASE_URL = "http://api.promiapi.com";
 
 const api = axios.create({ baseURL: API_BASE_URL });
 api.interceptors.request.use((config) => {

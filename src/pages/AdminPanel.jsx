@@ -5,7 +5,7 @@ import axios from "axios";
 const API_BASE_URL =
   (typeof import.meta !== "undefined" && import.meta.env?.VITE_BACKEND_URL) ||
   (typeof process !== "undefined" && process.env?.REACT_APP_BACKEND_URL) ||
-  "http://localhost:5000";
+  "http://api.promiapi.com"; // default fallback
 
 /* ───────────────────────── helpers ───────────────────────── */
 const api = (method, url, data) =>

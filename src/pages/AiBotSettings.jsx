@@ -3,7 +3,7 @@ import { motion, AnimatePresence, MotionConfig } from "framer-motion";
 import axios from "axios";
 
 // 🌐 Dynamic Base URL Setup with Ngrok Support
-const API_BASE_URL = import.meta.env.VITE_API_URL || "https://unawake-oversized-moneybags.ngrok-free.dev";
+const API_BASE_URL = import.meta.env.VITE_API_URL || "https://api.promiapi.com"; // default fallback
 
 // Custom Clean SVG Icons
 const Icons = {

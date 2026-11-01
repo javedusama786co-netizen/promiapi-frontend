@@ -8,7 +8,7 @@ import { useBranding } from "../context/BrandingContext";
 
 const API_BASE_URL = 
   (typeof import.meta !== "undefined" && import.meta.env?.VITE_API_URL) || 
-  "http://localhost:5000";
+  "http://api.promiapi.com"; // default fallback
 
 const formatAvatarUrl = (url) => {
   if (!url) return "";

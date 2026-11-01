@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 
-const API_BASE_URL = "https://unawake-oversized-moneybags.ngrok-free.dev";
+const API_BASE_URL = "https://api.promiapi.com";
 
 /* -------------------------------------------------------------------------- */
 /*  Icons                                                                     */

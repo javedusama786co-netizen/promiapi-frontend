@@ -17,7 +17,7 @@ function ActivateAccount() {
   const BACKEND_URL =
     (typeof import.meta !== "undefined" && import.meta.env?.VITE_BACKEND_URL) ||
     (typeof process !== "undefined" && process.env?.REACT_APP_BACKEND_URL) ||
-    "http://localhost:5000";
+    "http://api.promiapi.com"; // default fallback
 
   const handleSubmit = async (e) => {
     e.preventDefault();
