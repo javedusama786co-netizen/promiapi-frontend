@@ -15,7 +15,7 @@ import "reactflow/dist/style.css";
 import axios from "axios";
 import { useSearchParams } from "react-router-dom";
 
-const API_BASE_URL = "http://api.promiapi.com"; // default fallback
+const API_BASE_URL = "https://api.promiapi.com"; // default fallback
 
 // Plan Limit Helper Function
 const getFlowLimitByPlan = (planInput) => {

@@ -21,7 +21,7 @@ function ProtectedFeature({ children }) {
       }
 
       try {
-        const res = await axios.get("http://api.promiapi.com/api/subscription/user/subscription", {
+        const res = await axios.get("https://api.promiapi.com/api/subscription/user/subscription", {
           headers: { Authorization: `Bearer ${token}` }
         });
         

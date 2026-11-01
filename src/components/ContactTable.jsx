@@ -13,7 +13,7 @@ function ContactTable({ initialGroupFilter }) {
   const itemsPerPage = 10; 
 
   // Hardcoded Fallback URL context sync ensure karne ke liye
-  const API_BASE_URL = "http://api.promiapi.com"; // default fallback
+  const API_BASE_URL = "https://api.promiapi.com"; // default fallback
 
   useEffect(() => {
     const token = localStorage.getItem("token");

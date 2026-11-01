@@ -146,7 +146,7 @@ function GeneralSettings() {
 
     // 1. Fetch Subscription Status
     axios
-      .get("http://api.promiapi.com/api/subscription/user/subscription", { headers })
+      .get("https://api.promiapi.com/api/subscription/user/subscription", { headers })
       .then((res) => {
         if (res.data) {
           setUserSubscription({
@@ -159,7 +159,7 @@ function GeneralSettings() {
 
     // 2. Fetch Tenant Config
     axios
-      .get("http://api.promiapi.com/api/tenant/config", { headers })
+      .get("https://api.promiapi.com/api/tenant/config", { headers })
       .then((res) => {
         if (res.data?.branding) {
           const b = res.data.branding;
@@ -176,7 +176,7 @@ function GeneralSettings() {
 
     // 3. Fetch Vendor Settings
     axios
-      .get("http://api.promiapi.com/api/vendor/settings", { headers })
+      .get("https://api.promiapi.com/api/vendor/settings", { headers })
       .then((res) => {
         if (res.data?.settings) {
           const s = res.data.settings;
@@ -211,7 +211,7 @@ function GeneralSettings() {
     const token = localStorage.getItem("token");
 
     try {
-      const res = await axios.post("http://api.promiapi.com/api/vendor/upload-logo", data, {
+      const res = await axios.post("https://api.promiapi.com/api/vendor/upload-logo", data, {
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "multipart/form-data",
@@ -264,11 +264,11 @@ function GeneralSettings() {
     };
 
     try {
-      const tenantRes = await axios.put("http://api.promiapi.com/api/tenant/update", syncData, {
+      const tenantRes = await axios.put("https://api.promiapi.com/api/tenant/update", syncData, {
         headers: { Authorization: `Bearer ${token}` }
       });
 
-      await axios.post("http://api.promiapi.com/api/vendor/settings", syncData, {
+      await axios.post("https://api.promiapi.com/api/vendor/settings", syncData, {
         headers: { Authorization: `Bearer ${token}` }
       });
 

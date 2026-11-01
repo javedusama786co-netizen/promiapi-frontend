@@ -29,7 +29,7 @@ function Subscription() {
   const API_BASE_URL =
     (typeof import.meta !== "undefined" && import.meta.env?.VITE_BACKEND_URL) ||
     (typeof process !== "undefined" && process.env?.REACT_APP_BACKEND_URL) ||
-    "http://api.promiapi.com"; // default fallback
+    "https://api.promiapi.com"; // default fallback
 
   useEffect(() => {
     const fetchUserData = async () => {

@@ -23,7 +23,7 @@ const resolveApiBase = () => {
       if (window.REACT_APP_API_BASE_URL) return window.REACT_APP_API_BASE_URL;
     }
   } catch (e) { /* ignore */ }
-  return "http://api.promiapi.com"; // default fallback
+  return "https://api.promiapi.com"; // default fallback
 };
 const API_BASE_URL = resolveApiBase();
 
