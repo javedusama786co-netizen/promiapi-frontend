@@ -1101,14 +1101,98 @@ const CSS = `
 
 @media(max-width:1024px){
  .hero-grid,.omni-grid,.ai-grid,.contact-grid,.growth,.trust{grid-template-columns:1fr;gap:44px}
- .hero-float,.omni-proof{display:none}.stats-grid{grid-template-columns:repeat(2,1fr)}
+ .stats-grid{grid-template-columns:repeat(2,1fr)}
  .bento,.testi-grid{grid-template-columns:1fr 1fr}.fcard.wide{grid-column:span 2}.foot-grid{grid-template-columns:1fr 1fr}
 }
 @media(max-width:680px){
  .sec{padding:70px 0}.hero{padding:100px 0 70px}.panel,.form{padding:26px 18px;border-radius:22px}.trust{padding:36px 16px}
  .bento,.testi-grid,.foot-grid,.form-row{grid-template-columns:1fr}.fcard.wide{grid-column:auto}
  .phone{width:min(310px,86vw)}.row .btn{width:100%}.wa-float{width:52px;height:52px;bottom:16px;right:16px}
- .omni-wrap{zoom:.8}.vs{width:min(270px,80vw)}.cta{padding:60px 20px;border-radius:24px}
+ .vs{width:min(270px,80vw)}.cta{padding:60px 20px;border-radius:24px}
+}
+
+/* ═════════ Responsive pass: every screen, nothing hidden ═════════ */
+.hx{width:100%;max-width:100%;overflow-x:hidden;overflow-x:clip}
+.hx img,.hx canvas{max-width:100%}
+.hx :is(h1,h2,h3,p,li,span,b){overflow-wrap:break-word}
+.hx .btn,.hx .form input,.hx .form textarea{max-width:100%}
+
+/* small laptops / iPad Pro landscape */
+@media(max-width:1280px){
+ .hero-grid{gap:40px}.phone-stage{padding:40px 36px}.phone{width:300px}
+ .omni-grid,.ai-grid,.contact-grid{gap:44px}
+ .p1{left:-70px}.p2{right:-90px}.p3{left:-60px}
+ .hero-grid>*,.omni-grid>*,.ai-grid>*,.contact-grid>*,.growth>*,.trust>*{min-width:0}
+}
+
+/* tablets (iPad, Android tablets) and large phones in landscape */
+@media(max-width:1024px){
+ .hero-grid,.omni-grid,.ai-grid,.contact-grid,.growth,.trust{grid-template-columns:minmax(0,1fr)}
+ .phone-stage{padding:40px 70px}.phone{width:320px}
+ .metrics{flex-direction:row;flex-wrap:wrap;justify-content:space-between;gap:24px}
+ .sec-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .bento .fcard:last-child,.testi-grid .tcard:last-child{grid-column:span 2}
+ .foot-grid>div:first-child{grid-column:1/-1}
+ .step{padding:26px}
+ .vs{width:min(270px,100%)}
+ .brain-wrap{margin-bottom:40px}
+ /* omni inbox scales with the screen; floating chips sit underneath */
+ .omni-stage{width:100%;max-width:380px}
+ .omni{width:100%;height:auto;aspect-ratio:1;margin-bottom:150px}
+ .omni-lines{width:100%;height:100%}
+ .inbox{width:63.2%}
+ .orb{width:15.3%;height:auto;aspect-ratio:1}
+ .o1{top:5.3%;left:2.6%}.o2{top:5.3%;right:2.6%}.o3{bottom:2.6%;margin-left:-7.65%}
+ .omni .chip.omni-proof{top:auto;left:0;right:0;margin:0 auto;width:max-content;max-width:100%}
+ .omni .chip.p1{bottom:-46px}.omni .chip.p2{bottom:-92px}.omni .chip.p3{bottom:-138px}
+}
+@media(max-width:900px){.steps{grid-template-columns:minmax(0,1fr)}}
+
+/* phones */
+@media(max-width:680px){
+ .wrap{padding:0 18px}
+ .sec{padding:56px 0}.hero{padding:92px 0 56px}.strip{padding:34px 0}
+ .head{margin-bottom:34px}.head p,.lead,.lead.sm{font-size:15.5px}
+ .hx h2,.head h2{font-size:26px;letter-spacing:-.6px}
+ .hero-h1{font-size:clamp(30px,9vw,40px);letter-spacing:-1px}
+ .lockup{flex-wrap:wrap;gap:10px}
+ .pill{max-width:100%;font-size:12.5px}
+ .row{flex-direction:column;align-items:stretch;width:100%}.row>*,.row .btn{width:100%}
+ .btn{white-space:normal;text-align:center;padding:14px 20px;font-size:15px;line-height:1.25}
+ .stack img{width:36px;height:36px;margin-left:-10px}.proof>div:last-child{min-width:0;flex:1}
+ /* hero phone: chips come out from over the chat and sit beneath it */
+ .phone-stage{padding:4px 0 0;perspective:none}
+ .phone-3d{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;width:100%;max-width:320px;transform:none!important;transform-style:flat}
+ .phone{width:100%;max-width:320px;flex:0 0 100%;transform:none}
+ .chat{min-height:270px}
+ .hx .phone-3d .chip.hero-float{position:static;inset:auto;transform:none;animation:none;white-space:normal;flex:1 1 auto;padding:8px 12px;font-size:12px;border-radius:12px}
+ .hx .phone-3d .chip.c1,.hx .phone-3d .chip.c3{flex:1 1 100%}
+ .hx .phone-3d .chip.c3{justify-content:center}
+ .panel,.form{padding:24px 16px;border-radius:20px}.trust{padding:30px 16px}
+ .stats-grid{gap:14px;grid-template-columns:repeat(2,minmax(0,1fr))}.stat h3{font-size:21px;overflow-wrap:anywhere}.stat p{font-size:13px}
+ .steps,.sec-grid,.bento,.testi-grid,.foot-grid,.form-row{grid-template-columns:minmax(0,1fr)}
+ .bento .fcard:last-child,.testi-grid .tcard:last-child,.foot-grid>div:first-child{grid-column:auto}
+ .step,.trustc,.fcard,.tcard{padding:22px 18px;border-radius:20px}
+ .metrics{flex-direction:column;gap:18px}.num{font-size:28px}
+ .seal{width:120px;height:120px}.seal-core{width:98px;height:98px}
+ .vs{width:100%;max-width:300px}.tags span{font-size:12px}
+ .faq-q{padding:16px;font-size:15px}.faq-a{padding:0 16px 18px;font-size:14.5px}
+ .form input,.form textarea{font-size:16px}
+ .care{padding:22px 16px}
+ .toggle{max-width:100%}.toggle button{padding:9px 14px;font-size:13.5px}
+ .addons{padding:20px 16px}.addon>div{flex-wrap:wrap}
+ .plans{grid-template-columns:minmax(0,1fr)}
+ .plan{padding:26px 18px 20px;border-radius:24px}.plan-h{flex-wrap:wrap}.price{flex-wrap:wrap}.price strong{font-size:42px}
+ .limits{grid-template-columns:repeat(2,minmax(0,1fr))}.limits strong{font-size:17px}
+ .cta{padding:48px 18px;border-radius:22px}.cta p{font-size:15.5px}
+ .foot{padding:56px 0 96px}
+ .wa-float{bottom:calc(16px + env(safe-area-inset-bottom,0px));right:16px}
+ .chart{padding-right:0}.peak .tag{left:auto;right:0;top:-34px}
+ .legend{gap:14px}
+ .brain{width:min(420px,100%)}.console{font-size:11px;padding:10px 12px}
+}
+@media(max-width:380px){
+ .hero-h1{font-size:28px}.hx h2,.head h2{font-size:23px}.stat h3{font-size:18px}.price strong{font-size:38px}.console{font-size:10px}
 }
 `;
 
