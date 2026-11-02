@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import axios from "axios";
 import * as XLSX from "xlsx";
 
@@ -103,14 +103,6 @@ const ICON_PATHS = {
       <circle cx="12" cy="12" r="2" />
     </>
   ),
-  calendar: (
-    <>
-      <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-      <line x1="16" y1="2" x2="16" y2="6" />
-      <line x1="8" y1="2" x2="8" y2="6" />
-      <line x1="3" y1="10" x2="21" y2="10" />
-    </>
-  ),
   globe: (
     <>
       <circle cx="12" cy="12" r="10" />
@@ -134,6 +126,20 @@ const ICON_PATHS = {
       <path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" />
     </>
   ),
+  qrCode: (
+    <>
+      <rect x="3" y="3" width="7" height="7" />
+      <rect x="14" y="3" width="7" height="7" />
+      <rect x="3" y="14" width="7" height="7" />
+      <rect x="14" y="14" width="7" height="7" />
+    </>
+  ),
+  arrowRight: (
+    <>
+      <line x1="5" y1="12" x2="19" y2="12" />
+      <polyline points="12 5 19 12 12 19" />
+    </>
+  )
 };
 
 function Icon({ name, size = 16, className = "", strokeWidth = 2 }) {
@@ -177,10 +183,6 @@ const PLATFORM_LABELS = {
   messenger: "Messenger",
 };
 
-/* -------------------------------------------------------------------------- */
-/*  Small helpers                                                             */
-/* -------------------------------------------------------------------------- */
-
 const AVATAR_TONES = [
   { bg: "#e0e7ff", fg: "#3730a3" },
   { bg: "#dcfce7", fg: "#166534" },
@@ -209,12 +211,9 @@ const formatFileSize = (bytes = 0) => {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 };
 
-/* -------------------------------------------------------------------------- */
-/*  Component                                                                 */
-/* -------------------------------------------------------------------------- */
-
 function Contacts() {
   const location = useLocation();
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("contacts");
 
   const [groups, setGroups] = useState([]);
@@ -232,8 +231,9 @@ function Contacts() {
   const [showManualModal, setShowManualModal] = useState(false);
   const [showExcelModal, setShowExcelModal] = useState(false);
 
-  // Verification result modal
+  // Verification result modal & Guide Modal for QR / Baileys requirement
   const [showVerifyModal, setShowVerifyModal] = useState(false);
+  const [showQrGuideModal, setShowQrGuideModal] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [verifyStats, setVerifyStats] = useState({ verifiedCount: 0, activeCount: 0, invalidCount: 0 });
   const [targetGroupForMove, setTargetGroupForMove] = useState("");
@@ -254,7 +254,6 @@ function Contacts() {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
-  // UI-only state
   const [toasts, setToasts] = useState([]);
   const [confirmState, setConfirmState] = useState(null);
   const [formErrors, setFormErrors] = useState({});
@@ -262,9 +261,7 @@ function Contacts() {
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef(null);
 
-  const API_BASE_URL = "https://api.promiapi.com"; // Move to an env variable (VITE_API_URL / REACT_APP_API_URL) for production builds.
-
-  /* ----------------------------- Toasts & confirm ----------------------------- */
+  const API_BASE_URL = "https://api.promiapi.com";
 
   const dismissToast = useCallback((id) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
@@ -289,8 +286,6 @@ function Contacts() {
     setConfirmState(null);
   };
 
-  /* --------------------------------- Effects --------------------------------- */
-
   useEffect(() => {
     function handleClickOutside(event) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
@@ -310,11 +305,9 @@ function Contacts() {
 
   useEffect(() => {
     fetchInitialData(false);
-
     const interval = setInterval(() => {
       fetchInitialData(true);
     }, 5000);
-
     return () => clearInterval(interval);
   }, []);
 
@@ -322,31 +315,13 @@ function Contacts() {
     setCurrentPage(1);
   }, [searchQuery, selectedGroupFilter, selectedTagFilter, selectedPlatformFilter]);
 
-  // Escape closes the top-most layer; background scroll is locked while a dialog is open
-  const anyDialogOpen = showManualModal || showExcelModal || showVerifyModal || !!confirmState;
-  useEffect(() => {
-    const onKey = (e) => {
-      if (e.key !== "Escape") return;
-      if (confirmState) {
-        confirmState.resolve(false);
-        setConfirmState(null);
-      } else if (showManualModal) setShowManualModal(false);
-      else if (showExcelModal) setShowExcelModal(false);
-      else if (showVerifyModal) setShowVerifyModal(false);
-      else setIsPlatformDropdownOpen(false);
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [confirmState, showManualModal, showExcelModal, showVerifyModal]);
-
+  const anyDialogOpen = showManualModal || showExcelModal || showVerifyModal || showQrGuideModal || !!confirmState;
   useEffect(() => {
     document.body.style.overflow = anyDialogOpen ? "hidden" : "";
     return () => {
       document.body.style.overflow = "";
     };
   }, [anyDialogOpen]);
-
-  /* ------------------------------- Data loading ------------------------------- */
 
   const fetchInitialData = async (isBackground = false) => {
     const token = localStorage.getItem("token");
@@ -377,8 +352,6 @@ function Contacts() {
     }
   };
 
-  /* -------------------------------- Formatting -------------------------------- */
-
   const formatDate = (dateString) => {
     if (!dateString) return "N/A";
     const date = new Date(dateString);
@@ -401,8 +374,6 @@ function Contacts() {
     if (!dateString) return "";
     return new Date(dateString).toLocaleTimeString("en-PK", { hour: "2-digit", minute: "2-digit", hour12: true });
   };
-
-  /* --------------------------------- Derived --------------------------------- */
 
   const allUniqueTags = Array.from(new Set(contacts.flatMap((c) => c.tags || [])));
 
@@ -445,7 +416,6 @@ function Contacts() {
     groups: groups.length,
     active: contacts.filter((c) => c.platform === "whatsapp" && c.status === "ACTIVE").length,
     invalid: contacts.filter((c) => c.platform === "whatsapp" && c.status === "INVALID").length,
-    // WhatsApp numbers jo abhi verify nahi hue (waCheckedAt khali)
     unchecked: contacts.filter((c) => c.platform === "whatsapp" && !c.waCheckedAt).length,
   };
 
@@ -457,49 +427,55 @@ function Contacts() {
     return pages;
   })();
 
-  /* --------------------------------- Handlers --------------------------------- */
-
-  // Bulk WhatsApp verification & opening the result modal
+  // Enhanced Verification Handler with QR Integration Check & Guide Popup
   const handleVerifyWhatsApp = async () => {
     if (summary.unchecked === 0) {
       pushToast("success", "Everything is already checked", "All WhatsApp numbers have been verified. Newly added numbers will appear here for the next check.");
       return;
     }
-    const ok = await askConfirm({
-      tone: "primary",
-      title: "Verify new WhatsApp numbers?",
-      message: `${summary.unchecked.toLocaleString()} number${summary.unchecked === 1 ? " hasn't" : "s haven't"} been checked yet. Only these will be verified; numbers that were already checked are skipped.`,
-      confirmLabel: "Start verification",
-    });
-    if (!ok) return;
-    setVerifying(true);
+
     const token = localStorage.getItem("token");
+    setVerifying(true);
     try {
+      // Backend api call to check verification status and test socket availability
       const res = await axios.post(
         `${API_BASE_URL}/api/contacts/verify-whatsapp`,
         {},
         { headers: { Authorization: `Bearer ${token}` } }
       );
+
+      // Agar socket connected nahi hai ya error return kare ke session connected nahi
+      if (res.data && res.data.success === false && res.data.message && res.data.message.includes("Socket")) {
+        setShowQrGuideModal(true);
+        setVerifying(false);
+        return;
+      }
+
       const stats = res.data.stats || { verifiedCount: 0, activeCount: 0, invalidCount: 0 };
       if (res.data.skipped || !stats.verifiedCount) {
-        // Official Cloud API (pre-check mumkin nahi) ya kuch check nahi hua: report modal ki jagah message
-        pushToast("warning", "Nothing was verified", res.data.message || "No numbers could be checked right now.");
+        // Agar Cloud API ki waja se ya session na hone ki waja se skip ho jaye toh guide modal kholen
+        setShowQrGuideModal(true);
       } else {
         setVerifyStats(stats);
         setShowVerifyModal(true);
         if (stats.failedCount) {
-          pushToast("warning", "Some numbers couldn't be checked", `${stats.failedCount} number${stats.failedCount === 1 ? "" : "s"} will be retried next time.`);
+          pushToast("warning", "Some numbers couldn't be checked", `${stats.failedCount} number(s) will be retried next time.`);
         }
       }
       fetchInitialData(true);
     } catch (err) {
-      pushToast("error", "Verification failed", err.response?.data?.message || "The server couldn't complete the verification.");
+      // Agar backend se error aaye ke WhatsApp QR Socket connected nahi hai
+      const errMsg = err.response?.data?.message || "";
+      if (errMsg.includes("Socket") || errMsg.includes("connected") || errMsg.includes("QR")) {
+        setShowQrGuideModal(true);
+      } else {
+        pushToast("error", "Verification failed", errMsg || "The server couldn't complete the verification.");
+      }
     } finally {
       setVerifying(false);
     }
   };
 
-  // Delete all INVALID contacts after verification
   const handleDeleteInvalidContacts = async () => {
     const ok = await askConfirm({
       title: "Delete all invalid numbers?",
@@ -514,14 +490,13 @@ function Contacts() {
         await axios.delete(`${API_BASE_URL}/api/contacts/${id}`, { headers: { Authorization: `Bearer ${token}` } });
       }
       setContacts((prev) => prev.filter((c) => !(c.platform === "whatsapp" && c.status === "INVALID")));
-      pushToast("success", "Invalid numbers deleted", `${invalidIds.length} contact${invalidIds.length === 1 ? "" : "s"} removed from your database.`);
+      pushToast("success", "Invalid numbers deleted", `${invalidIds.length} contact(s) removed from your database.`);
       setShowVerifyModal(false);
     } catch (err) {
       pushToast("error", "Some numbers weren't deleted", "Try again, or remove the remaining contacts one by one.");
     }
   };
 
-  // Move ACTIVE contacts to a specific group
   const handleSaveActiveToGroup = async () => {
     if (!targetGroupForMove) {
       pushToast("warning", "Select a group", "Choose a target group before moving contacts.");
@@ -568,7 +543,7 @@ function Contacts() {
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Filtered Contacts");
     XLSX.writeFile(workbook, "Contacts_Report.xlsx");
-    pushToast("success", "Export ready", `${filteredContacts.length} contact${filteredContacts.length === 1 ? "" : "s"} saved to Contacts_Report.xlsx.`);
+    pushToast("success", "Export ready", `${filteredContacts.length} contact(s) saved to Contacts_Report.xlsx.`);
   };
 
   const handleDownloadTemplate = () => {
@@ -756,7 +731,7 @@ function Contacts() {
         pushToast(
           "success",
           "Import complete",
-          inserted ? `${inserted.length} contact${inserted.length === 1 ? "" : "s"} imported from your spreadsheet.` : "Contacts imported from your spreadsheet."
+          inserted ? `${inserted.length} contact(s) imported from your spreadsheet.` : "Contacts imported from your spreadsheet."
         );
       })
       .catch((err) => pushToast("error", "Import failed", err.response?.data?.message || "The server couldn't process this file."))
@@ -776,8 +751,6 @@ function Contacts() {
     setSelectedGroupFilter(groupName);
     setActiveTab("contacts");
   };
-
-  /* --------------------------------- Renderers -------------------------------- */
 
   const renderPlatformBadge = (platform) => {
     const p = (platform || "whatsapp").toLowerCase();
@@ -833,8 +806,6 @@ function Contacts() {
   };
 
   const platformOptions = ["All", "whatsapp", "instagram", "messenger"];
-
-  /* ----------------------------------- JSX ----------------------------------- */
 
   return (
     <div className="ct-root">
@@ -1345,6 +1316,62 @@ function Contacts() {
         </>
       )}
 
+      {/* QR Code / Baileys Connection Guide Modal */}
+      {showQrGuideModal && (
+        <div className="ct-backdrop" onMouseDown={(e) => e.target === e.currentTarget && setShowQrGuideModal(false)}>
+          <div className="ct-modal ct-modal--wide" role="dialog" aria-modal="true" aria-labelledby="ct-qr-guide-title">
+            <div className="ct-modal-header">
+              <div>
+                <h3 className="ct-modal-title" id="ct-qr-guide-title">
+                  WhatsApp QR Session Required
+                </h3>
+                <p className="ct-modal-sub">Bina message bheje numbers verify karne ke liye QR session zaroori hai.</p>
+              </div>
+              <button type="button" className="ct-icon-btn" onClick={() => setShowQrGuideModal(false)} aria-label="Close">
+                <Icon name="x" size={18} />
+              </button>
+            </div>
+
+            <div className="ct-callout ct-callout--info" style={{ margin: "16px 0" }}>
+              <span className="ct-callout-icon">
+                <Icon name="qrCode" size={24} />
+              </span>
+              <div className="ct-callout-body">
+                <h4 className="ct-callout-title" style={{ fontSize: "15px", marginBottom: "6px" }}>Yeh system kaise kaam karta hai?</h4>
+                <p className="ct-callout-text" style={{ lineHeight: "1.6", color: "#1e293b" }}>
+                  Official WhatsApp Cloud API ke zariye bina message bheje numbers verify karna mumkin nahi hai[cite: 1]. Lekin agar aap hamare <strong>WhatsApp QR Session (Baileys)</strong> ko connect karte hain, toh system ek hi click mein aapke saare numbers ko background mein bina ek bhi message bheje check kar lega aur active/invalid mark kar dega[cite: 1].
+                </p>
+              </div>
+            </div>
+
+            <div style={{ background: "#f8fafc", padding: "16px", borderRadius: "10px", border: "1px solid #e2e8f0", marginBottom: "20px" }}>
+              <p style={{ margin: "0 0 10px 0", fontWeight: "600", color: "#0f172a", fontSize: "14px" }}>Aapko kya karna hoga?</p>
+              <ol style={{ margin: 0, paddingLeft: "20px", color: "#475569", fontSize: "13.5px", lineHeight: "1.7" }}>
+                <li>Neeche diye gaye button par click karke <strong>Integrations / Settings</strong> page par jayen.</li>
+                <li>Wahan apna WhatsApp QR Code scan karke session connect karein.</li>
+                <li>Wapas is Contact page par aakar <strong>Verify WhatsApp</strong> par click karein aur saare numbers ek sath verify kar lein!</li>
+              </ol>
+            </div>
+
+            <div className="ct-modal-footer">
+              <button type="button" className="ct-btn ct-btn--ghost" onClick={() => setShowQrGuideModal(false)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="ct-btn ct-btn--primary"
+                onClick={() => {
+                  setShowQrGuideModal(false);
+                  navigate("/integrations"); // Yahan aap apni integration route ya settings page ka path de sakte hain
+                }}
+              >
+                Go to Integrations <Icon name="arrowRight" size={16} />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Verification report modal */}
       {showVerifyModal && (
         <div className="ct-backdrop" onMouseDown={(e) => e.target === e.currentTarget && setShowVerifyModal(false)}>
@@ -1754,10 +1781,6 @@ function Contacts() {
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/*  Styles                                                                    */
-/* -------------------------------------------------------------------------- */
-
 const CSS = `
 .ct-root {
   --ct-ink: #0f172a;
@@ -1799,13 +1822,11 @@ const CSS = `
 
 .ct-root :focus-visible { outline: 2px solid var(--ct-primary); outline-offset: 2px; }
 
-/* Header */
 .ct-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; }
 .ct-title { margin: 0 0 4px; font-size: 24px; font-weight: 700; letter-spacing: -0.02em; color: var(--ct-ink); }
 .ct-subtitle { margin: 0; max-width: 560px; color: var(--ct-muted); font-size: 14px; }
 .ct-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
-/* Buttons */
 .ct-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 38px; padding: 0 14px; border-radius: var(--ct-radius); border: 1px solid transparent; font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: background-color .15s, border-color .15s, box-shadow .15s, color .15s; }
 .ct-btn:disabled { opacity: .55; cursor: not-allowed; }
 .ct-btn--block { width: 100%; }
@@ -1829,7 +1850,6 @@ const CSS = `
 .ct-spinner--light { border-color: rgba(255,255,255,.4); border-top-color: #fff; }
 @keyframes ct-spin { to { transform: rotate(360deg); } }
 
-/* Summary */
 .ct-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 24px; }
 .ct-stat { background: var(--ct-surface); border: 1px solid var(--ct-line); border-radius: var(--ct-radius-lg); padding: 16px 18px; display: flex; flex-direction: column; gap: 4px; }
 .ct-stat-label { font-size: 13px; color: var(--ct-muted); }
@@ -1837,7 +1857,6 @@ const CSS = `
 .ct-stat-value--good { color: var(--ct-good); }
 .ct-stat-value--bad { color: var(--ct-bad); }
 
-/* Tabs */
 .ct-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--ct-line); margin-bottom: 20px; overflow-x: auto; }
 .ct-tab { display: inline-flex; align-items: center; gap: 8px; padding: 10px 14px; margin-bottom: -1px; background: none; border: none; border-bottom: 2px solid transparent; color: var(--ct-muted); font-size: 14px; font-weight: 500; cursor: pointer; white-space: nowrap; transition: color .15s, border-color .15s; }
 .ct-tab:hover { color: var(--ct-ink); }
@@ -1845,11 +1864,9 @@ const CSS = `
 .ct-tab-count { min-width: 22px; padding: 1px 7px; border-radius: 999px; background: var(--ct-line-soft); color: var(--ct-text); font-size: 12px; font-weight: 600; text-align: center; font-variant-numeric: tabular-nums; }
 .ct-tab.is-active .ct-tab-count { background: var(--ct-primary-soft); color: var(--ct-primary); }
 
-/* Cards */
 .ct-card { background: var(--ct-surface); border: 1px solid var(--ct-line); border-radius: var(--ct-radius-lg); }
 .ct-table-card { overflow: hidden; }
 
-/* Filters */
 .ct-filters { display: grid; grid-template-columns: minmax(240px, 2fr) minmax(170px, 1fr) minmax(190px, 1fr) minmax(150px, 1fr); gap: 10px; margin-bottom: 12px; }
 .ct-input { width: 100%; height: 38px; padding: 0 12px; border-radius: var(--ct-radius); border: 1px solid #cbd5e1; background: var(--ct-surface); color: var(--ct-ink); font-size: 14px; font-family: inherit; transition: border-color .15s, box-shadow .15s; }
 .ct-input::placeholder { color: var(--ct-faint); }
@@ -1878,7 +1895,6 @@ const CSS = `
 .ct-result-bar { display: flex; justify-content: space-between; align-items: center; min-height: 24px; margin-bottom: 10px; padding: 0 2px; }
 .ct-result-count { font-size: 13px; color: var(--ct-muted); }
 
-/* Table */
 .ct-table-scroll { width: 100%; overflow-x: auto; }
 .ct-table { width: 100%; min-width: 1040px; border-collapse: collapse; text-align: left; }
 .ct-table--groups { min-width: 480px; }
@@ -1924,7 +1940,6 @@ const CSS = `
 .ct-date-day { color: var(--ct-ink); font-size: 13px; }
 .ct-date-time { color: var(--ct-faint); font-size: 12px; }
 
-/* Pagination */
 .ct-pagination { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 16px; border-top: 1px solid var(--ct-line); background: var(--ct-surface); }
 .ct-page-info { font-size: 13px; color: var(--ct-muted); }
 .ct-page-info strong { color: var(--ct-ink); font-weight: 600; }
@@ -1935,7 +1950,6 @@ const CSS = `
 .ct-page-btn.is-current { background: var(--ct-ink); color: #fff; }
 .ct-page-gap { padding: 0 4px; color: var(--ct-faint); }
 
-/* Empty & loading */
 .ct-empty { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 56px 16px; white-space: normal; }
 .ct-empty-icon { display: inline-flex; align-items: center; justify-content: center; width: 48px; height: 48px; border-radius: 50%; background: var(--ct-line-soft); color: var(--ct-muted); margin-bottom: 14px; }
 .ct-empty-title { margin: 0 0 4px; font-size: 15px; font-weight: 600; color: var(--ct-ink); }
@@ -1952,7 +1966,6 @@ const CSS = `
 .ct-skeleton--short { flex: .6; }
 @keyframes ct-shimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
 
-/* Groups tab */
 .ct-groups { display: grid; grid-template-columns: minmax(280px, 340px) minmax(0, 1fr); gap: 20px; align-items: start; }
 .ct-panel { padding: 20px; }
 .ct-panel-title { margin: 0 0 4px; font-size: 16px; font-weight: 700; color: var(--ct-ink); }
@@ -1961,7 +1974,6 @@ const CSS = `
 .ct-group-icon { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 8px; background: var(--ct-primary-soft); color: var(--ct-primary); }
 .ct-row-actions { display: inline-flex; align-items: center; gap: 12px; }
 
-/* Forms */
 .ct-form { display: flex; flex-direction: column; gap: 16px; }
 .ct-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .ct-field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -1979,7 +1991,6 @@ const CSS = `
 .ct-segment--instagram.is-active { color: #be185d; }
 .ct-segment--messenger.is-active { color: #1d4ed8; }
 
-/* Modals */
 .ct-backdrop { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(15, 23, 42, .5); backdrop-filter: blur(2px); animation: ct-fade .15s ease; }
 .ct-backdrop--top { z-index: 1100; }
 .ct-modal { width: 100%; max-width: 500px; max-height: 92vh; overflow-y: auto; padding: 24px; background: var(--ct-surface); border-radius: 14px; box-shadow: 0 24px 48px -12px rgba(15, 23, 42, .35); animation: ct-pop .18s ease; }
@@ -2002,7 +2013,6 @@ const CSS = `
 .ct-confirm-actions { display: flex; gap: 8px; }
 .ct-confirm-actions .ct-btn { flex: 1; }
 
-/* Verification report */
 .ct-verify-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
 .ct-verify-stat { padding: 14px; border: 1px solid var(--ct-line); border-radius: 10px; background: var(--ct-surface-alt); display: flex; flex-direction: column; gap: 2px; }
 .ct-verify-stat--good { background: var(--ct-good-soft); border-color: #bbf7d0; }
@@ -2024,7 +2034,6 @@ const CSS = `
 .ct-callout-row { display: flex; gap: 8px; }
 .ct-callout-row .ct-select { flex: 1; }
 
-/* Import */
 .ct-file-input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 .ct-dropzone { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 24px 16px; border: 1.5px dashed #cbd5e1; border-radius: 10px; background: var(--ct-surface-alt); cursor: pointer; transition: border-color .15s, background-color .15s; }
 .ct-dropzone:hover, .ct-dropzone.is-drag { border-color: var(--ct-primary); background: var(--ct-primary-soft); }
@@ -2037,7 +2046,6 @@ const CSS = `
 .ct-file-chip-name { font-size: 14px; font-weight: 600; color: var(--ct-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ct-file-chip-size { font-size: 12.5px; color: var(--ct-muted); }
 
-/* Toasts */
 .ct-toasts { position: fixed; top: 20px; right: 20px; z-index: 1200; display: flex; flex-direction: column; gap: 10px; width: min(380px, calc(100vw - 32px)); pointer-events: none; }
 .ct-toast { position: relative; display: flex; align-items: flex-start; gap: 12px; padding: 14px 14px 16px; background: var(--ct-surface); border: 1px solid var(--ct-line); border-radius: 12px; box-shadow: 0 16px 32px -8px rgba(15, 23, 42, .22), 0 2px 6px rgba(15, 23, 42, .06); overflow: hidden; pointer-events: auto; animation: ct-toast-in .25s cubic-bezier(.2, .8, .2, 1); }
 .ct-toast-icon { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; flex-shrink: 0; color: #fff; margin-top: 1px; }
@@ -2056,7 +2064,6 @@ const CSS = `
 @keyframes ct-toast-in { from { opacity: 0; transform: translateX(24px); } to { opacity: 1; transform: none; } }
 @keyframes ct-timer { from { transform: scaleX(1); } to { transform: scaleX(0); } }
 
-/* Responsive */
 @media (max-width: 1100px) {
   .ct-filters { grid-template-columns: 1fr 1fr; }
   .ct-search { grid-column: 1 / -1; }
