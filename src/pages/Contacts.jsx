@@ -1362,7 +1362,7 @@ function Contacts() {
                 className="ct-btn ct-btn--primary"
                 onClick={() => {
                   setShowQrGuideModal(false);
-                  navigate("/integrations"); // Yahan aap apni integration route ya settings page ka path de sakte hain
+                  navigate("/dashboard/settings/whatsapp"); // Yahan aap apni integration route ya settings page ka path de sakte hain
                 }}
               >
                 Go to Integrations <Icon name="arrowRight" size={16} />
