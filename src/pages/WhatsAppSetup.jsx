@@ -456,7 +456,7 @@ function SocialIntegrations() {
                 <span className="sc-logo-core"><Layers size={26} /></span>
               </div>
               <div>
-                <h2 className="sc-title">Promy API Messaging Engine</h2>
+                <h2 className="sc-title">Promi API Messaging Engine</h2>
                 <p className="sc-subtitle">Choose between Meta Official Cloud API or Quick QR Scan Web Engine.</p>
               </div>
             </div>
