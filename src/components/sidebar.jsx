@@ -101,7 +101,7 @@ const Svg = ({ size = 18, children }) => (
 const icons = {
   dashboard: <Svg><rect x="3" y="3" width="7" height="9" rx="1.5" /><rect x="14" y="3" width="7" height="5" rx="1.5" /><rect x="14" y="12" width="7" height="9" rx="1.5" /><rect x="3" y="16" width="7" height="5" rx="1.5" /></Svg>,
   analytics: <Svg><line x1="18" y1="20" x2="18" y2="10" /><line x1="12" y1="20" x2="12" y2="4" /><line x1="6" y1="20" x2="6" y2="14" /></Svg>,
-  qrCode: <Svg><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /></Svg>,
+  growth: <Svg><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></Svg>,
   chat: <Svg><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></Svg>,
   campaign: <Svg><path d="M11 5L6 9H2v6h4l5 4V5zM15.5 8.5a4.5 4.5 0 0 1 0 7M19 5.5a8.5 8.5 0 0 1 0 13" /></Svg>,
   contacts: <Svg><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></Svg>,
@@ -357,7 +357,7 @@ function Sidebar({ isOpen, onClose }) {
           <NavItem to="/dashboard/campaigns" icon={icons.campaign} label="Campaigns" onClick={handleNavClick} />
           <NavItem to="/dashboard/contacts" icon={icons.contacts} label="Contacts" onClick={handleNavClick} />
           <NavItem to="/dashboard/templates" icon={icons.templates} label="Templates" onClick={handleNavClick} />
-          <NavItem to="/dashboard/qr" icon={icons.qrCode} label="QR Code" onClick={handleNavClick} />
+          <NavItem to="/dashboard/qr" icon={icons.growth} label="Growth Tools" onClick={handleNavClick} />
           <NavItem to="/dashboard/logs" icon={icons.logs} label="Message Log" onClick={handleNavClick} />
 
           <p className="sb-section">Automation</p>
