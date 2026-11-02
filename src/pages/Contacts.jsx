@@ -445,6 +445,8 @@ function Contacts() {
     groups: groups.length,
     active: contacts.filter((c) => c.platform === "whatsapp" && c.status === "ACTIVE").length,
     invalid: contacts.filter((c) => c.platform === "whatsapp" && c.status === "INVALID").length,
+    // WhatsApp numbers jo abhi verify nahi hue (waCheckedAt khali)
+    unchecked: contacts.filter((c) => c.platform === "whatsapp" && !c.waCheckedAt).length,
   };
 
   const pageWindow = (() => {
@@ -459,10 +461,14 @@ function Contacts() {
 
   // Bulk WhatsApp verification & opening the result modal
   const handleVerifyWhatsApp = async () => {
+    if (summary.unchecked === 0) {
+      pushToast("success", "Everything is already checked", "All WhatsApp numbers have been verified. Newly added numbers will appear here for the next check.");
+      return;
+    }
     const ok = await askConfirm({
       tone: "primary",
-      title: "Verify WhatsApp numbers?",
-      message: "We'll check every WhatsApp number in your database and mark it as active or invalid. This may take a moment.",
+      title: "Verify new WhatsApp numbers?",
+      message: `${summary.unchecked.toLocaleString()} number${summary.unchecked === 1 ? " hasn't" : "s haven't"} been checked yet. Only these will be verified; numbers that were already checked are skipped.`,
       confirmLabel: "Start verification",
     });
     if (!ok) return;
@@ -474,8 +480,17 @@ function Contacts() {
         {},
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      setVerifyStats(res.data.stats || { verifiedCount: 0, activeCount: 0, invalidCount: 0 });
-      setShowVerifyModal(true);
+      const stats = res.data.stats || { verifiedCount: 0, activeCount: 0, invalidCount: 0 };
+      if (res.data.skipped || !stats.verifiedCount) {
+        // Official Cloud API (pre-check mumkin nahi) ya kuch check nahi hua: report modal ki jagah message
+        pushToast("warning", "Nothing was verified", res.data.message || "No numbers could be checked right now.");
+      } else {
+        setVerifyStats(stats);
+        setShowVerifyModal(true);
+        if (stats.failedCount) {
+          pushToast("warning", "Some numbers couldn't be checked", `${stats.failedCount} number${stats.failedCount === 1 ? "" : "s"} will be retried next time.`);
+        }
+      }
       fetchInitialData(true);
     } catch (err) {
       pushToast("error", "Verification failed", err.response?.data?.message || "The server couldn't complete the verification.");
@@ -777,9 +792,11 @@ function Contacts() {
   const renderStatus = (contact) => {
     if (contact.platform !== "whatsapp") return <span className="ct-muted">Not applicable</span>;
     const status = contact.status || "PENDING";
-    const label = status === "ACTIVE" ? "Active" : status === "INVALID" ? "Invalid" : "Pending";
+    const notChecked = status === "ACTIVE" && !contact.waCheckedAt;
+    const label = notChecked ? "Not checked" : status === "ACTIVE" ? "Active" : status === "INVALID" ? "Invalid" : "Pending";
+    const cls = notChecked ? "pending" : status.toLowerCase();
     return (
-      <span className={`ct-status ct-status--${status.toLowerCase()}`}>
+      <span className={`ct-status ct-status--${cls}`}>
         <span className="ct-status-dot" />
         {label}
       </span>
@@ -853,7 +870,7 @@ function Contacts() {
           <div className="ct-actions">
             <button type="button" className="ct-btn ct-btn--ghost" onClick={handleVerifyWhatsApp} disabled={verifying}>
               {verifying ? <span className="ct-spinner" /> : <Icon name="shield" size={16} />}
-              {verifying ? "Verifying…" : "Verify WhatsApp"}
+              {verifying ? "Verifying…" : summary.unchecked > 0 ? `Verify WhatsApp (${summary.unchecked.toLocaleString()} new)` : "Verify WhatsApp"}
             </button>
             <button type="button" className="ct-btn ct-btn--ghost" onClick={handleExportExcel}>
               <Icon name="download" size={16} /> Export
@@ -1337,7 +1354,7 @@ function Contacts() {
                 <h3 className="ct-modal-title" id="ct-verify-title">
                   WhatsApp verification report
                 </h3>
-                <p className="ct-modal-sub">Results from checking every WhatsApp number in your database.</p>
+                <p className="ct-modal-sub">Results from checking the numbers that hadn't been verified yet.</p>
               </div>
               <button type="button" className="ct-icon-btn" onClick={() => setShowVerifyModal(false)} aria-label="Close">
                 <Icon name="x" size={18} />
