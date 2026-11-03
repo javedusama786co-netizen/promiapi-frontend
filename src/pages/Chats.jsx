@@ -1765,6 +1765,7 @@ function Chats() {
       textLower.includes("🎙 voice note") ||
       textLower.includes("voice attachment received") ||
       textLower.includes("media attachment received") ||
+      (hasMedia && /^\[(voice note|image attachment|video attachment)\]$/.test(textLower)) ||
       (msg.isPending && /^sending (image|video|audio|document)\.\.\.$/.test(textLower));
 
     return (
