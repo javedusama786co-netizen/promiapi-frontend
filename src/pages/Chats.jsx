@@ -1,9 +1,14 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from "react";
 import axios from "axios";
 import { io } from "socket.io-client";
 
 // 🌐 GLOBAL ACTIVE API URL CONFIGURATION
 const API_BASE_URL = "https://api.promiapi.com"; // Replace with your actual API base URL
+
+const getQuickReplyHeaders = () => ({
+  Authorization: `Bearer ${localStorage.getItem("token")}`,
+  "ngrok-skip-browser-warning": "true"
+});
 
 const cleanIdentifier = (idStr) => String(idStr || "").trim();
 
@@ -192,6 +197,9 @@ const ChatBubbleIcon = (p) => <Svg {...p}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5
 const MegaphoneIcon = (p) => <Svg {...p}><path d="m3 11 18-5v12L3 14v-3z" /><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6" /></Svg>;
 const BotIcon = (p) => <Svg {...p}><rect x="4" y="8" width="16" height="12" rx="3" /><path d="M12 8V4" /><circle cx="12" cy="3.5" r="1" /><circle cx="9" cy="14" r="1" fill="currentColor" /><circle cx="15" cy="14" r="1" fill="currentColor" /></Svg>;
 const ZapIcon = (p) => <Svg {...p}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></Svg>;
+const PlusIcon = (p) => <Svg {...p}><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></Svg>;
+const EditIcon = (p) => <Svg {...p}><path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z" /></Svg>;
+const ChevronDownIcon = (p) => <Svg {...p}><polyline points="6 9 12 15 18 9" /></Svg>;
 const UserCardIcon = (p) => <Svg {...p}><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></Svg>;
 const PinIcon = (p) => <Svg {...p}><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></Svg>;
 const CheckSmallIcon = (p) => <Svg {...p}><polyline points="20 6 9 17 4 12" /></Svg>;
@@ -953,6 +961,16 @@ function Chats() {
   const [toast, setToast] = useState("");
   const [listLoading, setListLoading] = useState(true);
   const menuRef = useRef(null);
+  const rootRef = useRef(null);
+  const inputRef = useRef(null);
+
+  // 💬 Quick replies (saved templates) + compact mobile header
+  const [quickReplies, setQuickReplies] = useState([]);
+  const [qrPanelOpen, setQrPanelOpen] = useState(false);
+  const [qrSearch, setQrSearch] = useState("");
+  const [qrEditor, setQrEditor] = useState(null); // null | { _id?, title, body, category }
+  const [qrSaving, setQrSaving] = useState(false);
+  const [headerExpanded, setHeaderExpanded] = useState(false);
   const attachRef = useRef(null);
   const toastTimerRef = useRef(null);
 
@@ -2164,6 +2182,141 @@ function Chats() {
   const activeChannelMeta = CHANNELS[getChannelKey(activeChat?.channel || activeChat?.platform)];
   const historyLoaded = activeChat ? Object.prototype.hasOwnProperty.call(chatCache, rawActiveIdentifier) : false;
 
+  // =========================================================================
+  // FULL-BLEED LAYOUT: remove the page padding / background that shows as a
+  // white frame around the chat (esp. in dark mode). Only touches the chain of
+  // wrappers whose sole child is this chat, and restores them on unmount.
+  // =========================================================================
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    if (!root) return undefined;
+    const surface = getComputedStyle(root).getPropertyValue("--c-surface").trim();
+    const touched = [];
+    let node = root.parentElement;
+    while (node && node !== document.body && node !== document.documentElement && node.children.length === 1) {
+      touched.push([node, node.getAttribute("style")]);
+      node.style.padding = "0";
+      node.style.margin = "0";
+      node.style.maxWidth = "none";
+      node.style.border = "none";
+      node.style.borderRadius = "0";
+      node.style.boxShadow = "none";
+      if (surface) node.style.background = surface;
+      node = node.parentElement;
+    }
+    return () => {
+      touched.forEach(([el, original]) => {
+        if (original === null) el.removeAttribute("style");
+        else el.setAttribute("style", original);
+      });
+    };
+  }, [theme]);
+
+  // =========================================================================
+  // QUICK REPLIES
+  // =========================================================================
+  const fetchQuickReplies = useCallback(async () => {
+    try {
+      const res = await axios.get(`${API_BASE_URL}/api/chats/quick-replies`, { headers: getQuickReplyHeaders() });
+      if (res.data?.success) setQuickReplies(res.data.data || []);
+    } catch (err) {
+      console.error("Failed to load quick replies:", err.message);
+    }
+  }, []);
+
+  useEffect(() => { fetchQuickReplies(); }, [fetchQuickReplies]);
+
+  // Close the picker on outside click / Escape; reset per-chat UI when switching chats
+  useEffect(() => {
+    if (!qrPanelOpen) return undefined;
+    const onDown = (e) => { if (attachRef.current && !attachRef.current.contains(e.target) && !e.target.closest?.("[data-qr-toggle]")) { setQrPanelOpen(false); setQrEditor(null); } };
+    const onKey = (e) => { if (e.key === "Escape") { setQrPanelOpen(false); setQrEditor(null); } };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("mousedown", onDown); document.removeEventListener("keydown", onKey); };
+  }, [qrPanelOpen]);
+
+  useEffect(() => { setHeaderExpanded(false); setQrPanelOpen(false); setQrEditor(null); }, [rawActiveIdentifier]);
+
+  // Auto-grow the message box (max ~6 lines) so typing has proper room
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 140)}px`;
+  }, [typedMessage, activeChat, isRecording]);
+
+  const toggleQuickReplies = () => {
+    setShowAttachmentMenu(false);
+    setQrPanelOpen((v) => !v);
+    setQrEditor(null);
+    setQrSearch("");
+  };
+
+  const applyQuickReply = (qr) => {
+    const rawFirst = String(activeName || "").trim().split(/\s+/)[0] || "";
+    const firstName = !rawFirst || /^unknown/i.test(rawFirst) || /^[\d+]+$/.test(rawFirst) ? "there" : rawFirst;
+    const text = String(qr.body || "").replace(/\{\{\s*name\s*\}\}/gi, firstName);
+    setTypedMessage((prev) => (prev.trim() ? `${prev}\n${text}` : text));
+    setQrPanelOpen(false);
+    setQrEditor(null);
+    setQrSearch("");
+    setTimeout(() => inputRef.current?.focus(), 0);
+  };
+
+  const saveQuickReply = async (e) => {
+    if (e) e.preventDefault();
+    if (!qrEditor || qrSaving) return;
+    const payload = { title: qrEditor.title.trim(), body: qrEditor.body.trim(), category: (qrEditor.category || "").trim() };
+    if (!payload.title || !payload.body) { showToast("Both a title and a message are required."); return; }
+
+    setQrSaving(true);
+    try {
+      const url = `${API_BASE_URL}/api/chats/quick-replies`;
+      const res = qrEditor._id
+        ? await axios.put(`${url}/${qrEditor._id}`, payload, { headers: getQuickReplyHeaders() })
+        : await axios.post(url, payload, { headers: getQuickReplyHeaders() });
+      if (res.data?.success) {
+        const saved = res.data.data;
+        setQuickReplies((prev) => {
+          const next = qrEditor._id ? prev.map((q) => (q._id === saved._id ? saved : q)) : [...prev, saved];
+          return next.sort((a, b) => (a.category || "").localeCompare(b.category || "") || a.title.localeCompare(b.title));
+        });
+        setQrEditor(null);
+        showToast("Quick reply saved");
+      }
+    } catch (err) {
+      showToast(err.response?.data?.message || "Could not save the quick reply.");
+    } finally {
+      setQrSaving(false);
+    }
+  };
+
+  const deleteQuickReply = async (qr) => {
+    if (!window.confirm(`Delete the quick reply "${qr.title}"?`)) return;
+    try {
+      await axios.delete(`${API_BASE_URL}/api/chats/quick-replies/${qr._id}`, { headers: getQuickReplyHeaders() });
+      setQuickReplies((prev) => prev.filter((q) => q._id !== qr._id));
+      showToast("Quick reply deleted");
+    } catch (err) {
+      showToast(err.response?.data?.message || "Could not delete the quick reply.");
+    }
+  };
+
+  const qrNeedle = qrSearch.trim().toLowerCase();
+  const filteredQuickReplies = quickReplies.filter((q) =>
+    !qrNeedle || `${q.title} ${q.body} ${q.category || ""}`.toLowerCase().includes(qrNeedle)
+  );
+  const qrCategories = Array.from(new Set(quickReplies.map((q) => q.category).filter(Boolean)));
+
+  // Enter sends on desktop, Shift+Enter = new line. On mobile Enter is always a new line.
+  const handleComposerKeyDown = (e) => {
+    if (e.key === "Enter" && !e.shiftKey && !isMobile && !e.nativeEvent.isComposing) {
+      e.preventDefault();
+      if (typedMessage.trim() || selectedFile) handleSendMessage(null, false);
+    }
+  };
+
   const channelOptions = [
     { key: "all", label: "All", count: countAllChats, Icon: null },
     { key: "whatsapp", label: "WhatsApp", count: countWhatsApp, Icon: WhatsAppIcon },
@@ -2178,7 +2331,7 @@ function Chats() {
   ];
 
   return (
-    <div style={styles.container} className="chats-root chat-main-container" data-theme={theme}>
+    <div ref={rootRef} style={styles.container} className="chats-root chat-main-container" data-theme={theme}>
       <style>{CHATS_CSS}</style>
 
       <input type="file" ref={fileInputRef} onChange={handleFileChange} style={{ display: "none" }} />
@@ -2375,6 +2528,7 @@ function Chats() {
 
                   <div style={{ minWidth: 0 }}>
                     <h3 style={styles.headerName}>{activeName}</h3>
+                    {(!isMobile || headerExpanded) ? (
                     <div style={styles.headerMeta}>
                       <ChannelBadge channel={activeChat.channel || activeChat.platform} />
                       <ChatSourceBadge chat={activeChat} />
@@ -2383,9 +2537,44 @@ function Chats() {
                       )}
                       <span style={styles.headerId}>{activeIdentifier || "N/A"}</span>
                     </div>
+                    ) : (
+                    <div style={styles.headerMeta}>
+                      <span style={styles.headerId}>{activeIdentifier || "N/A"}</span>
+                    </div>
+                    )}
                   </div>
                 </div>
 
+                <div style={styles.headerCluster}>
+                  <button
+                    type="button"
+                    data-qr-toggle="true"
+                    className="cr-icon-btn cr-icon-btn-lg"
+                    onClick={toggleQuickReplies}
+                    aria-label="Quick replies"
+                    aria-pressed={qrPanelOpen}
+                    title="Quick replies"
+                    style={qrPanelOpen ? { background: "var(--c-accent-soft)", color: "var(--c-accent-text)" } : undefined}
+                  >
+                    <ZapIcon size={19} />
+                  </button>
+                  {isMobile && (
+                    <button
+                      type="button"
+                      className="cr-icon-btn cr-icon-btn-lg"
+                      onClick={() => setHeaderExpanded((v) => !v)}
+                      aria-label={headerExpanded ? "Hide chat details" : "Show chat details"}
+                      aria-expanded={headerExpanded}
+                      title={headerExpanded ? "Hide chat details" : "Show chat details"}
+                    >
+                      <span style={{ display: "inline-flex", transform: headerExpanded ? "rotate(180deg)" : "none", transition: "transform .15s" }}>
+                        <ChevronDownIcon size={19} />
+                      </span>
+                    </button>
+                  )}
+                </div>
+
+                {(!isMobile || headerExpanded) && (
                 <div style={styles.headerActions} className="chat-header-actions">
                   <label className="cr-field" style={styles.selectWrap} title="Conversation status">
                     <StatusDot status={activeChat.status} />
@@ -2434,10 +2623,11 @@ function Chats() {
                     </button>
                   )}
                 </div>
+                )}
               </header>
 
               <div style={styles.msgRegion}>
-                <div ref={msgBodyRef} style={styles.msgBody} className="cr-scroll">
+                <div ref={msgBodyRef} style={styles.msgBody} className="cr-scroll chat-msg-body">
                   {messages.length === 0 ? (
                     historyLoaded ? (
                       <div style={styles.emptyMessages}>
@@ -2524,6 +2714,139 @@ function Chats() {
                   </div>
                 )}
 
+                {qrPanelOpen && (
+                  <div style={styles.qrPanel} className="chat-qr-panel" role="dialog" aria-label="Quick replies">
+                    <div style={styles.qrHeader}>
+                      <strong style={styles.qrTitle}>
+                        {qrEditor ? (qrEditor._id ? "Edit quick reply" : "New quick reply") : "Quick replies"}
+                      </strong>
+                      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                        {!qrEditor && (
+                          <button type="button" className="cr-btn-ghost" onClick={() => setQrEditor({ title: "", body: "", category: "" })}>
+                            <PlusIcon size={14} /> New
+                          </button>
+                        )}
+                        <button type="button" className="cr-icon-btn" aria-label="Close quick replies" onClick={() => { setQrPanelOpen(false); setQrEditor(null); }}>
+                          <CloseIcon size={16} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {qrEditor ? (
+                      <form onSubmit={saveQuickReply} style={styles.qrForm}>
+                        <label style={styles.qrLabel}>
+                          Title
+                          <input
+                            type="text"
+                            className="cr-input"
+                            style={styles.qrField}
+                            value={qrEditor.title}
+                            maxLength={80}
+                            autoFocus
+                            placeholder="e.g. Price list"
+                            onChange={(e) => setQrEditor({ ...qrEditor, title: e.target.value })}
+                          />
+                        </label>
+                        <label style={styles.qrLabel}>
+                          Category <span style={styles.qrOptional}>(optional)</span>
+                          <input
+                            type="text"
+                            className="cr-input"
+                            style={styles.qrField}
+                            value={qrEditor.category}
+                            maxLength={40}
+                            list="qr-category-list"
+                            placeholder="e.g. Pricing"
+                            onChange={(e) => setQrEditor({ ...qrEditor, category: e.target.value })}
+                          />
+                          <datalist id="qr-category-list">
+                            {qrCategories.map((c) => <option key={c} value={c} />)}
+                          </datalist>
+                        </label>
+                        <label style={styles.qrLabel}>
+                          Message
+                          <textarea
+                            className="cr-input"
+                            style={{ ...styles.qrField, height: "auto", minHeight: 110, padding: "10px 12px", resize: "vertical", lineHeight: 1.45 }}
+                            value={qrEditor.body}
+                            maxLength={4096}
+                            rows={5}
+                            placeholder="Write the full message you send again and again…"
+                            onChange={(e) => setQrEditor({ ...qrEditor, body: e.target.value })}
+                          />
+                        </label>
+                        <p style={styles.qrHint}>Tip: type {"{{name}}"} to insert the customer's first name automatically.</p>
+                        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                          <button type="button" className="cr-btn-ghost" onClick={() => setQrEditor(null)}>Cancel</button>
+                          <button type="submit" className="cr-btn-primary" style={styles.qrSaveBtn} disabled={qrSaving}>
+                            {qrSaving ? "Saving…" : "Save"}
+                          </button>
+                        </div>
+                      </form>
+                    ) : (
+                      <>
+                        {quickReplies.length > 0 && (
+                          <div style={styles.qrSearchRow}>
+                            <SearchIcon size={15} />
+                            <input
+                              type="text"
+                              value={qrSearch}
+                              onChange={(e) => setQrSearch(e.target.value)}
+                              placeholder="Search saved replies"
+                              aria-label="Search saved replies"
+                              style={styles.searchInput}
+                            />
+                          </div>
+                        )}
+                        <div style={styles.qrList} className="cr-scroll">
+                          {quickReplies.length === 0 ? (
+                            <div style={styles.qrEmpty}>
+                              <span style={styles.listEmptyIcon}><ZapIcon size={22} /></span>
+                              <p style={styles.listEmptyTitle}>No quick replies yet</p>
+                              <p style={styles.listEmptyText}>Save the messages you send often (prices, address, payment details) and insert them in one tap.</p>
+                              <button type="button" className="cr-btn-ghost" onClick={() => setQrEditor({ title: "", body: "", category: "" })}>
+                                <PlusIcon size={14} /> Create your first one
+                              </button>
+                            </div>
+                          ) : filteredQuickReplies.length === 0 ? (
+                            <p style={{ ...styles.listEmptyText, margin: "18px auto", textAlign: "center" }}>No saved replies match “{qrSearch}”.</p>
+                          ) : (
+                            filteredQuickReplies.map((qr) => (
+                              <div
+                                key={qr._id}
+                                className="cr-menu-item"
+                                style={styles.qrItem}
+                                role="button"
+                                tabIndex={0}
+                                onClick={() => applyQuickReply(qr)}
+                                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); applyQuickReply(qr); } }}
+                              >
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={styles.qrItemTop}>
+                                    <span style={styles.qrItemTitle}>{qr.title}</span>
+                                    {qr.category && <span style={styles.tagAd}>{qr.category}</span>}
+                                  </div>
+                                  <div style={styles.qrItemBody}>{qr.body}</div>
+                                </div>
+                                {qr.canManage !== false && (
+                                  <div style={{ display: "flex", gap: 2, flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
+                                    <button type="button" className="cr-icon-btn cr-icon-btn-sm" aria-label={`Edit ${qr.title}`} title="Edit" onClick={() => setQrEditor({ _id: qr._id, title: qr.title, body: qr.body, category: qr.category || "" })}>
+                                      <EditIcon size={14} />
+                                    </button>
+                                    <button type="button" className="cr-icon-btn cr-icon-btn-sm" aria-label={`Delete ${qr.title}`} title="Delete" style={{ color: "var(--c-danger)" }} onClick={() => deleteQuickReply(qr)}>
+                                      <TrashIcon size={14} />
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+
                 <form onSubmit={(e) => handleSendMessage(e, false)} style={styles.inputBar} className="chat-input-bar">
                   <button
                     type="button"
@@ -2535,6 +2858,18 @@ function Chats() {
                     title="Attach a file"
                   >
                     <ClipIcon size={20} />
+                  </button>
+                  <button
+                    type="button"
+                    data-qr-toggle="true"
+                    className="cr-icon-btn cr-icon-btn-lg"
+                    onClick={toggleQuickReplies}
+                    aria-label="Quick replies"
+                    aria-expanded={qrPanelOpen}
+                    title="Quick replies"
+                    style={qrPanelOpen ? { background: "var(--c-accent-soft)", color: "var(--c-accent-text)" } : undefined}
+                  >
+                    <ZapIcon size={20} />
                   </button>
 
                   {isRecording ? (
@@ -2562,11 +2897,13 @@ function Chats() {
                     </div>
                   ) : (
                     <>
-                      <input
-                        type="text"
+                      <textarea
+                        ref={inputRef}
+                        rows={1}
                         className="cr-input"
                         value={typedMessage}
                         onChange={(e) => setTypedMessage(e.target.value)}
+                        onKeyDown={handleComposerKeyDown}
                         aria-label="Message"
                         placeholder={selectedFile ? "Add a caption" : `Reply on ${activeChannelMeta.label}`}
                         style={styles.inputField}
@@ -2627,10 +2964,10 @@ const styles = {
     width: "100%",
     minHeight: "560px",
     background: "var(--c-surface)",
-    borderRadius: "12px",
-    border: "1px solid var(--c-border)",
+    borderRadius: 0,
+    border: "none",
     overflow: "hidden",
-    boxShadow: "0 1px 2px rgba(16, 24, 40, .04)",
+    boxShadow: "none",
     fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
     fontSize: "14px",
     lineHeight: 1.4,
@@ -2680,8 +3017,9 @@ const styles = {
 
   /* ---------- chat panel ---------- */
   chatArea: { flex: 1, minWidth: 0, display: "flex", flexDirection: "column", background: "var(--c-chat-bg)", position: "relative" },
-  chatHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", flexWrap: "wrap", background: "var(--c-surface)", padding: "12px 20px", borderBottom: "1px solid var(--c-border)", zIndex: 2 },
-  headerLeft: { display: "flex", alignItems: "center", gap: "12px", minWidth: 0 },
+  chatHeader: { display: "flex", justifyContent: "flex-start", alignItems: "center", gap: "12px", flexWrap: "wrap", background: "var(--c-surface)", padding: "12px 20px", borderBottom: "1px solid var(--c-border)", zIndex: 2 },
+  headerCluster: { display: "flex", alignItems: "center", gap: "2px", flexShrink: 0, marginLeft: "auto" },
+  headerLeft: { display: "flex", alignItems: "center", gap: "12px", minWidth: 0, flex: "1 1 auto" },
   headerName: { margin: 0, fontSize: "15px", fontWeight: 600, color: "var(--c-text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
   headerMeta: { display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap", marginTop: "3px" },
   headerId: { fontSize: "12px", color: "var(--c-text-3)", fontVariantNumeric: "tabular-nums" },
@@ -2735,8 +3073,24 @@ const styles = {
 
   /* ---------- composer ---------- */
   inputContainerLayout: { position: "relative", background: "var(--c-surface)", borderTop: "1px solid var(--c-border)", zIndex: 2 },
-  inputBar: { padding: "12px 16px", display: "flex", gap: "8px", alignItems: "center" },
-  inputField: { flex: 1, padding: "0 14px", height: "42px", borderRadius: "12px", border: "1px solid var(--c-border-strong)", outline: "none", fontSize: "14px", background: "var(--c-surface-2)", color: "var(--c-text)", minWidth: 0 },
+  inputBar: { padding: "12px 16px", display: "flex", gap: "8px", alignItems: "flex-end" },
+  inputField: { flex: 1, padding: "10px 14px", minHeight: "42px", maxHeight: "140px", height: "42px", borderRadius: "12px", border: "1px solid var(--c-border-strong)", outline: "none", fontSize: "14px", lineHeight: 1.4, background: "var(--c-surface-2)", color: "var(--c-text)", minWidth: 0, resize: "none", fontFamily: "inherit", overflowY: "auto", display: "block" },
+  qrPanel: { position: "absolute", bottom: "calc(100% + 8px)", left: "12px", right: "12px", maxWidth: "460px", maxHeight: "min(440px, 62vh)", display: "flex", flexDirection: "column", background: "var(--c-surface)", border: "1px solid var(--c-border)", borderRadius: "14px", boxShadow: "var(--c-shadow)", zIndex: 20, overflow: "hidden", animation: "slideUpIn 0.15s ease-out" },
+  qrHeader: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", padding: "10px 10px 8px 14px", borderBottom: "1px solid var(--c-border)" },
+  qrTitle: { fontSize: "14px", fontWeight: 700, color: "var(--c-text)" },
+  qrSearchRow: { display: "flex", alignItems: "center", gap: "8px", margin: "10px 12px 4px", padding: "0 11px", height: "36px", borderRadius: "10px", background: "var(--c-surface-2)", color: "var(--c-text-3)" },
+  qrList: { flex: 1, minHeight: 0, overflowY: "auto", padding: "6px" },
+  qrEmpty: { display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", gap: "6px", padding: "22px 16px" },
+  qrItem: { display: "flex", alignItems: "flex-start", gap: "8px", padding: "9px 8px 9px 10px", borderRadius: "10px", cursor: "pointer", color: "var(--c-text)" },
+  qrItemTop: { display: "flex", alignItems: "center", gap: "8px", minWidth: 0 },
+  qrItemTitle: { fontSize: "13.5px", fontWeight: 600, color: "var(--c-text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
+  qrItemBody: { marginTop: "2px", fontSize: "12.5px", color: "var(--c-text-3)", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", whiteSpace: "pre-wrap", wordBreak: "break-word" },
+  qrForm: { display: "flex", flexDirection: "column", gap: "10px", padding: "12px 14px 14px", overflowY: "auto" },
+  qrLabel: { display: "flex", flexDirection: "column", gap: "5px", fontSize: "12.5px", fontWeight: 600, color: "var(--c-text-2)" },
+  qrOptional: { fontWeight: 400, color: "var(--c-text-3)" },
+  qrField: { width: "100%", height: "38px", padding: "0 12px", borderRadius: "10px", border: "1px solid var(--c-border-strong)", outline: "none", fontSize: "14px", background: "var(--c-surface-2)", color: "var(--c-text)", fontFamily: "inherit" },
+  qrHint: { margin: 0, fontSize: "12px", color: "var(--c-text-3)" },
+  qrSaveBtn: { height: "34px", padding: "0 16px", border: "none", borderRadius: "8px", background: "var(--c-accent)", color: "var(--c-on-accent)", fontSize: "13px", fontWeight: 600, cursor: "pointer" },
   sendBtn: { width: "42px", height: "42px", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--c-accent)", color: "var(--c-on-accent)", border: "none", borderRadius: "12px", cursor: "pointer", flexShrink: 0 },
   micRecordTriggerBtn: { border: "1px solid var(--c-border-strong)", background: "var(--c-surface-2)", color: "var(--c-text-2)", cursor: "pointer", width: "42px", height: "42px", borderRadius: "12px", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 },
 
@@ -2931,7 +3285,11 @@ const CHATS_CSS = `
     .chats-root .chat-header-actions { width: 100%; flex-shrink: 1; }
     .chats-root .chat-header-actions .cr-field { flex: 1; }
     .chats-root .cr-select-bare { max-width: none; width: 100%; }
-    .chats-root .chat-input-bar { padding: 8px 10px !important; }
+    .chats-root .chat-input-bar { padding: 8px 10px !important; gap: 6px !important; }
+    .chats-root .chat-msg-body { padding: 12px 10px !important; }
+    .chats-root .cr-input { font-size: 16px !important; }
+    .chats-root .chat-qr-panel { left: 8px !important; right: 8px !important; max-width: none !important; max-height: 60vh !important; }
+    .chats-root .chat-header-actions { flex-wrap: wrap; row-gap: 8px; }
     .chats-root .hide-mobile { display: none !important; }
   }
 `;
