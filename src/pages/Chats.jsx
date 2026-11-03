@@ -193,6 +193,7 @@ const MegaphoneIcon = (p) => <Svg {...p}><path d="m3 11 18-5v12L3 14v-3z" /><pat
 const BotIcon = (p) => <Svg {...p}><rect x="4" y="8" width="16" height="12" rx="3" /><path d="M12 8V4" /><circle cx="12" cy="3.5" r="1" /><circle cx="9" cy="14" r="1" fill="currentColor" /><circle cx="15" cy="14" r="1" fill="currentColor" /></Svg>;
 const ZapIcon = (p) => <Svg {...p}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></Svg>;
 const UserCardIcon = (p) => <Svg {...p}><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></Svg>;
+const PinIcon = (p) => <Svg {...p}><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></Svg>;
 const CheckSmallIcon = (p) => <Svg {...p}><polyline points="20 6 9 17 4 12" /></Svg>;
 const QrIcon = (p) => <Svg {...p}><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><path d="M14 14h3v3h-3zM20 14v.01M14 20v.01M20 20v.01M17 17h3v3" /></Svg>;
 const ShieldCheckIcon = (p) => <Svg {...p}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><path d="m9 12 2 2 4-4" /></Svg>;
@@ -465,8 +466,78 @@ const getContactCards = (msg) => {
   else if (src) push(src);
   if (!cards.length && msg.contact) push(msg.contact);
   if (!cards.length && (msg.vcard || msg.vCard)) push(msg.vcard || msg.vCard);
-  if (!cards.length && typeof msg.text === "string" && /BEGIN:VCARD/i.test(msg.text)) push(msg.text);
+  if (!cards.length && typeof msg.text === "string" && /BEGIN:VCARD/i.test(msg.text)) {
+    // one text can hold several vCards (customer shared more than one contact)
+    const blocks = msg.text.match(/BEGIN:VCARD[\s\S]*?END:VCARD/gi);
+    if (blocks && blocks.length) blocks.forEach(push);
+    else push(msg.text);
+  }
   return cards;
+};
+
+// 📍 LOCATION (works for QR/Baileys and Cloud API). Reads msg.location, or falls back to the Google-Maps link in the text.
+const getLocationInfo = (msg) => {
+  let lat;
+  let lng;
+  let name = "";
+  let address = "";
+  let isLive = false;
+  const l = msg.location || msg.loc;
+  if (l && typeof l === "object") {
+    lat = Number(l.latitude ?? l.lat ?? l.degreesLatitude);
+    lng = Number(l.longitude ?? l.lng ?? l.lon ?? l.degreesLongitude);
+    name = l.name || "";
+    address = l.address || "";
+    isLive = Boolean(l.isLive || l.live);
+  }
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    const m = typeof msg.text === "string"
+      ? msg.text.match(/maps[^\s]*[?&](?:q|query|ll)=(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/i)
+      : null;
+    if (!m) return null;
+    lat = Number(m[1]);
+    lng = Number(m[2]);
+    const lines = msg.text.split("\n").map((x) => x.trim()).filter(Boolean);
+    isLive = /live location/i.test(lines[0] || "");
+    const rest = lines.filter((x) => !/^📍/.test(x) && !/^https?:\/\//i.test(x));
+    name = rest[0] || "";
+    address = rest[1] || "";
+  }
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  return { lat, lng, name, address, isLive };
+};
+
+// 🎙 Placeholder texts that only say "this is a voice note" (they are hidden when the audio player is visible)
+const isGenericAudioText = (t) => {
+  const x = String(t || "").replace(/\uFE0F/g, "").trim();
+  if (!x) return true;
+  if (/^\[?\s*(?:🎙|🎤)?\s*(?:voice(?:\s*(?:note|message|attachment))?|audio(?:\s*attachment)?|ptt)(?:\s*received)?\s*\]?$/i.test(x)) return true;
+  if (/^📎\s*voice[-\w.]*\.(webm|ogg|opus|mp4|m4a|mp3|wav)$/i.test(x)) return true;
+  return false;
+};
+
+// 📋 Text shown in the chat list under the contact name (icon + short label instead of raw "[Voice Note]" / vCard text)
+const getChatPreview = (chat) => {
+  const raw = String(chat.lastMsg || chat.lastMessage || "").trim();
+  const t = String(chat.lastType || "").toLowerCase();
+  if (!raw && !t) return "No messages yet";
+
+  if (t === "audio" || t === "voice" || t === "ptt" || (raw && isGenericAudioText(raw))) return "🎤 Voice message";
+
+  const loc = getLocationInfo({ text: raw });
+  if (t === "location" || loc) return loc && loc.isLive ? "📍 Live location" : "📍 Location";
+
+  if (t === "contacts" || /BEGIN:VCARD/i.test(raw)) {
+    const first = raw.match(/BEGIN:VCARD[\s\S]*?END:VCARD/i);
+    const nm = first ? parseVcard(first[0]).name : "";
+    return `👤 ${nm || "Contact"}`;
+  }
+
+  if (t === "image") return /^\[.*\]$|^sending image/i.test(raw) || !raw ? "📷 Photo" : `📷 ${raw}`;
+  if (t === "video") return /^\[.*\]$|^sending video/i.test(raw) || !raw ? "🎥 Video" : `🎥 ${raw}`;
+  if (t === "document") return `📄 ${raw && !/^\[.*\]$/.test(raw) ? raw.replace(/^📎\s*/, "") : "Document"}`;
+
+  return raw || "No messages yet";
 };
 
 const AI_TOKENS = ["ai", "chatbot", "gpt", "llm", "openai", "gemini", "claude", "assistant"];
@@ -517,7 +588,7 @@ const getButtonReply = (msg) => {
 // =========================================================================
 // CUSTOM VOICE NOTE PLAYER
 // =========================================================================
-const WhatsAppVoicePlayer = ({ src }) => {
+const WhatsAppVoicePlayer = ({ src, unplayed = false, onPlay }) => {
   const audioRef = useRef(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -571,7 +642,10 @@ const WhatsAppVoicePlayer = ({ src }) => {
         onTimeUpdate={onTimeUpdate}
         onLoadedMetadata={readDuration}
         onDurationChange={readDuration}
-        onPlay={() => setIsPlaying(true)}
+        onPlay={() => {
+          setIsPlaying(true);
+          if (unplayed && onPlay) onPlay();
+        }}
         onPause={() => setIsPlaying(false)}
         onEnded={() => {
           setIsPlaying(false);
@@ -580,7 +654,12 @@ const WhatsAppVoicePlayer = ({ src }) => {
         }}
       />
 
-      <button type="button" onClick={togglePlay} style={styles.voicePlayBtn} aria-label={isPlaying ? "Pause voice message" : "Play voice message"}>
+      <button
+        type="button"
+        onClick={togglePlay}
+        style={unplayed ? { ...styles.voicePlayBtn, boxShadow: "0 0 0 3px var(--c-accent-soft)" } : styles.voicePlayBtn}
+        aria-label={isPlaying ? "Pause voice message" : "Play voice message"}
+      >
         {isPlaying ? (
           <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4" width="4" height="16" rx="1" /><rect x="14" y="4" width="4" height="16" rx="1" /></svg>
         ) : (
@@ -593,10 +672,13 @@ const WhatsAppVoicePlayer = ({ src }) => {
           <div style={{ ...styles.voiceFill, width: `${progress}%` }} />
         </div>
         <div style={styles.voiceMeta}>
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-            <MicIcon size={11} /> Voice message
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, color: unplayed ? "var(--c-accent-text)" : undefined, fontWeight: unplayed ? 700 : undefined }}>
+            <MicIcon size={11} /> {unplayed ? "New voice message" : "Voice message"}
           </span>
-          <span>{formatTime(isPlaying || currentTime > 0 ? currentTime : duration)}</span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+            {formatTime(isPlaying || currentTime > 0 ? currentTime : duration)}
+            {unplayed && <span title="Not listened yet" style={styles.unplayedDot} />}
+          </span>
         </div>
       </div>
     </div>
@@ -607,7 +689,7 @@ const WhatsAppVoicePlayer = ({ src }) => {
 // =========================================================================
 // 🔥 SECURE MEDIA WRAPPER
 // =========================================================================
-const SecureMediaWrapper = ({ src, type, fallbackText, onLoaded, isMe }) => {
+const SecureMediaWrapper = ({ src, type, fallbackText, onLoaded, isMe, unplayed = false, onPlayed, fileName }) => {
   const [mediaSource, setMediaSource] = useState(null);
   const [resolvedType, setResolvedType] = useState(type || "image");
   const [loading, setLoading] = useState(true);
@@ -718,7 +800,7 @@ const SecureMediaWrapper = ({ src, type, fallbackText, onLoaded, isMe }) => {
   }
 
   if (resolvedType === "audio" || resolvedType === "voice") {
-    return <WhatsAppVoicePlayer src={mediaSource || src} />;
+    return <WhatsAppVoicePlayer src={mediaSource || src} unplayed={unplayed} onPlay={onPlayed} />;
   }
 
   if (error) {
@@ -756,13 +838,47 @@ const SecureMediaWrapper = ({ src, type, fallbackText, onLoaded, isMe }) => {
   }
 
   return (
-    <a href={mediaSource || src} download target="_blank" rel="noopener noreferrer" style={styles.docAttachmentBtn}>
+    <a href={mediaSource || src} download={fileName || ""} target="_blank" rel="noopener noreferrer" style={styles.docAttachmentBtn}>
       <span style={styles.docIconBox}>
         <DocIcon size={18} />
       </span>
       <span style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
-        <span style={{ fontWeight: 600, fontSize: 13 }}>Document</span>
+        <span style={{ fontWeight: 600, fontSize: 13, wordBreak: "break-word" }}>{fileName || "Document"}</span>
         <span style={{ fontSize: 11.5, color: "var(--c-text-3)" }}>Open or download</span>
+      </span>
+    </a>
+  );
+};
+
+
+// =========================================================================
+// 📍 LOCATION CARD (QR / Baileys + Cloud API)
+// =========================================================================
+const LocationCard = ({ loc }) => {
+  if (!loc) return null;
+  const mapsUrl = `https://www.google.com/maps?q=${loc.lat},${loc.lng}`;
+  const d = 0.004;
+  const embed = `https://www.openstreetmap.org/export/embed.html?bbox=${loc.lng - d}%2C${loc.lat - d}%2C${loc.lng + d}%2C${loc.lat + d}&layer=mapnik&marker=${loc.lat}%2C${loc.lng}`;
+  return (
+    <a href={mapsUrl} target="_blank" rel="noopener noreferrer" style={styles.locationCard} title="Open in Google Maps">
+      <iframe
+        title="Shared location map"
+        src={embed}
+        loading="lazy"
+        style={styles.locationMap}
+        tabIndex={-1}
+      />
+      <span style={styles.locationBody}>
+        <span style={styles.locationIcon}><PinIcon size={16} /></span>
+        <span style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+          <span style={{ fontWeight: 600, fontSize: 13, wordBreak: "break-word" }}>
+            {loc.isLive ? "Live location" : "Location"}{loc.name ? ` · ${loc.name}` : ""}
+          </span>
+          {loc.address && <span style={{ fontSize: 11.5, color: "var(--c-text-3)", wordBreak: "break-word" }}>{loc.address}</span>}
+          <span style={{ fontSize: 11.5, color: "var(--c-accent-text)" }}>
+            {loc.lat.toFixed(5)}, {loc.lng.toFixed(5)} · Open in Maps
+          </span>
+        </span>
       </span>
     </a>
   );
@@ -816,6 +932,14 @@ function Chats() {
   const knownChatsRef = useRef({});              
   const chatsInitializedRef = useRef(false);     
   const markReadInFlightRef = useRef(new Set()); 
+
+  // 🔔 NEW (unread) message + "voice not listened yet" indicators
+  const [newMsgIds, setNewMsgIds] = useState(() => new Set());   // incoming messages that were unread when we saw them (kept highlighted while this chat stays open)
+  const [playedIds, setPlayedIds] = useState(() => new Set());   // voice notes listened to in this browser session
+  const newMsgIdsRef = useRef(new Set());
+  const seenMsgIdsRef = useRef(new Set());
+  const newSnapshotDoneRef = useRef(false);
+  const pendingNewCountRef = useRef(0);
   const baseTitleRef = useRef(typeof document !== "undefined" ? document.title : "");
 
   const [theme, setTheme] = useState(() => {
@@ -955,6 +1079,27 @@ function Chats() {
       console.error("Mark read failed:", err.message);
     } finally {
       markReadInFlightRef.current.delete(id);
+    }
+  }, []);
+
+  const markVoicePlayed = useCallback(async (msg) => {
+    const id = msg && msg._id ? String(msg._id) : "";
+    if (!id || id.startsWith("temp-")) return;
+    setPlayedIds((prev) => {
+      if (prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+    const token = localStorage.getItem("token");
+    try {
+      await axios.post(
+        `${API_BASE_URL}/api/chats/mark-played`,
+        { messageId: id },
+        { headers: { Authorization: `Bearer ${token}`, "ngrok-skip-browser-warning": "true" } }
+      );
+    } catch (err) {
+      console.error("Mark voice played failed:", err.message);
     }
   }, []);
 
@@ -1128,6 +1273,22 @@ function Chats() {
       const currentActiveId = cleanIdentifier(activeChatRef.current?.phone || activeChatRef.current?.customerPhone || activeChatRef.current?.senderId || activeChatRef.current?.igId || activeChatRef.current?._id);
       
       if (currentActiveId === cleanIdentifier(chatIdentifier)) {
+        // 🔔 remember which incoming messages are NEW (unread) so they stay highlighted while this chat is open
+        const fromThem = incomingMsgs.filter((m) => m.sender === "them" && m._id);
+        const firstLoad = !newSnapshotDoneRef.current;
+        const sizeBefore = newMsgIdsRef.current.size;
+        if (firstLoad) {
+          newSnapshotDoneRef.current = true;
+          const n = pendingNewCountRef.current || 0;
+          if (n > 0) fromThem.slice(-n).forEach((m) => newMsgIdsRef.current.add(String(m._id)));
+        }
+        fromThem.forEach((m) => {
+          const id = String(m._id);
+          if (m.status !== "read" || (!firstLoad && !seenMsgIdsRef.current.has(id))) newMsgIdsRef.current.add(id);
+          seenMsgIdsRef.current.add(id);
+        });
+        if (newMsgIdsRef.current.size !== sizeBefore) setNewMsgIds(new Set(newMsgIdsRef.current));
+
         setMessages((prevMsgs) => {
           const pendingMsgs = prevMsgs.filter(m => m.isPending || String(m._id).startsWith("temp-"));
 
@@ -1586,6 +1747,14 @@ function Chats() {
     const cleanCurrent = cleanIdentifier(currentIdentifier);
     const chatPlatform = chat.channel || chat.platform || "whatsapp";
 
+    // 🔔 remember how many messages were unread BEFORE we mark them read, and reset the highlight state
+    pendingNewCountRef.current = Number(chat.unreadCount ?? chat.unread_count ?? chat.unread ?? 0) || 0;
+    newMsgIdsRef.current = new Set();
+    seenMsgIdsRef.current = new Set();
+    newSnapshotDoneRef.current = false;
+    setNewMsgIds(new Set());
+    activeChatRef.current = chat; // so a late poll of the previously open chat cannot touch the new highlight state
+
     setMessages([]);
     setActiveChat(chat);
     isInitialLoadRef.current = true;
@@ -1754,6 +1923,12 @@ function Chats() {
       finalType = "document";
     }
 
+    const locationInfo = getLocationInfo(msg);
+    const isUnplayedVoice = finalType === "audio" && msg.sender === "them" && !msg.voicePlayed && !playedIds.has(String(msg._id));
+    const docFileName = finalType === "document"
+      ? (msg.fileName || (msg.text && !/^\[.*\]$/.test(msg.text) && msg.text.length < 150 ? String(msg.text).replace(/^📎\s*/, "") : ""))
+      : "";
+
     const contactCards = getContactCards(msg);
     const hasContactCards = contactCards.length > 0;
     const buttonReply = getButtonReply(msg);
@@ -1761,11 +1936,13 @@ function Chats() {
 
     const isPlaceholderText =
       hasContactCards ||
+      Boolean(locationInfo) ||
+      (finalType === "audio" && hasMedia && isGenericAudioText(msg.text)) ||
+      (finalType === "document" && hasMedia && Boolean(docFileName) && String(msg.text || "").replace(/^📎\s*/, "") === docFileName) ||
       textIsButtonTitle ||
       textLower.includes("🎙 voice note") ||
       textLower.includes("voice attachment received") ||
       textLower.includes("media attachment received") ||
-      (hasMedia && /^\[(voice note|image attachment|video attachment)\]$/.test(textLower)) ||
       (msg.isPending && /^sending (image|video|audio|document)\.\.\.$/.test(textLower));
 
     return (
@@ -1778,11 +1955,16 @@ function Chats() {
             type={finalType}
             isMe={msg.sender === "me"}
             fallbackText={finalType === "audio" ? "Voice note load error" : "File format error"}
+            unplayed={isUnplayedVoice}
+            onPlayed={() => markVoicePlayed(msg)}
+            fileName={docFileName || undefined}
             onLoaded={() => {
               if (!userIsScrolling) scrollToBottom("smooth");
             }}
           />
         )}
+
+        {locationInfo && <LocationCard loc={locationInfo} />}
 
         {renderContactCards(msg)}
 
@@ -1834,9 +2016,13 @@ function Chats() {
 
   const renderMessagesWithDateHeaders = () => {
     let lastDateStr = "";
+    const isNewMsg = (m) => m.sender !== "me" && newMsgIds.has(String(m._id));
+    const firstNewIndex = messages.findIndex(isNewMsg);
+    const newTotal = firstNewIndex === -1 ? 0 : messages.filter(isNewMsg).length;
 
     return messages.map((msg, index) => {
       const isMe = msg.sender === "me";
+      const isNew = isNewMsg(msg);
       const replyKind = getReplyKind(msg);
       const pressedTitle = isMe ? findPressedButton(index) : null;
       let dateHeader = null;
@@ -1863,13 +2049,19 @@ function Chats() {
       return (
         <div key={msg._id || index} style={{ width: "100%" }}>
           {dateHeader}
+          {index === firstNewIndex && (
+            <div style={styles.newDivider}>
+              <span style={styles.newDividerLabel}>{newTotal} unread message{newTotal === 1 ? "" : "s"}</span>
+            </div>
+          )}
           <div style={{ ...styles.msgRow, justifyContent: isMe ? "flex-end" : "flex-start" }}>
             <div
               className="chat-bubble"
               style={{
                 ...styles.bubble,
-                background: isMe ? "var(--c-bubble-me)" : "var(--c-bubble-them)",
-                borderColor: isMe ? "transparent" : "var(--c-bubble-border)",
+                background: isNew ? "var(--c-accent-soft)" : (isMe ? "var(--c-bubble-me)" : "var(--c-bubble-them)"),
+                borderColor: isNew ? "var(--c-accent)" : (isMe ? "transparent" : "var(--c-bubble-border)"),
+                boxShadow: isNew ? "inset 3px 0 0 var(--c-accent)" : undefined,
                 borderRadius: isMe ? "14px 14px 4px 14px" : "14px 14px 14px 4px",
                 opacity: msg.isPending ? 0.8 : 1
               }}
@@ -1888,6 +2080,7 @@ function Chats() {
               {renderMessageContent(msg, pressedTitle)}
 
               <span style={styles.bubbleTime}>
+                {isNew && <span style={styles.newTag}>NEW</span>}
                 {getCleanTimeLabel(msg.timestamp, msg.time)}
                 {isMe && <MessageStatusTicks status={msg.status} isPending={msg.isPending} />}
               </span>
@@ -1942,7 +2135,7 @@ function Chats() {
             <p style={{ ...styles.lastMsgText, color: hasUnread ? "var(--c-text)" : "var(--c-text-2)" }}>
               {chat.lastSender === "me" && <MessageStatusTicks status={chat.lastMessageStatus} size={14} />}
               <span style={{ marginLeft: chat.lastSender === "me" ? 4 : 0, overflow: "hidden", textOverflow: "ellipsis" }}>
-                {chat.lastMsg || chat.lastMessage || "No messages yet"}
+                {getChatPreview(chat)}
               </span>
             </p>
             {hasUnread && <span style={styles.unreadBadge}>{badgeCount > 99 ? "99+" : badgeCount}</span>}
@@ -2419,6 +2612,14 @@ function Chats() {
 }
 
 const styles = {
+  newDivider: { display: "flex", alignItems: "center", justifyContent: "center", margin: "10px 0 6px" },
+  newDividerLabel: { fontSize: "11.5px", fontWeight: 700, color: "var(--c-accent-text)", background: "var(--c-accent-soft)", padding: "3px 12px", borderRadius: "999px", letterSpacing: "0.2px" },
+  newTag: { fontSize: "9.5px", fontWeight: 800, letterSpacing: "0.5px", color: "var(--c-on-accent)", background: "var(--c-accent)", borderRadius: "999px", padding: "1px 6px", marginRight: 6 },
+  unplayedDot: { width: 8, height: 8, borderRadius: "50%", background: "var(--c-accent)", display: "inline-block", flexShrink: 0 },
+  locationCard: { display: "flex", flexDirection: "column", width: "260px", maxWidth: "100%", borderRadius: "10px", overflow: "hidden", border: "1px solid var(--c-border-strong)", background: "var(--c-surface)", color: "var(--c-text)", textDecoration: "none" },
+  locationMap: { width: "100%", height: "130px", border: 0, pointerEvents: "none", background: "var(--c-surface-2)" },
+  locationBody: { display: "flex", alignItems: "center", gap: 10, padding: "8px 10px" },
+  locationIcon: { width: 30, height: 30, borderRadius: "50%", background: "var(--c-accent-soft)", color: "var(--c-accent-text)", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 },
   container: {
     position: "relative",
     display: "flex",
