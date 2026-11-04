@@ -437,7 +437,7 @@ function SocialIntegrations() {
   const sdkBusy = loading || !isSdkReady;
 
   return (
-    <MotionConfig reducedMotion="user">
+    <MotionConfig reducedMotion="never">
       <div className="sc-root">
         <style>{css}</style>
         <div className="sc-wrap">
@@ -737,7 +737,7 @@ const css = `
 .sc-hero{position:relative;overflow:hidden;border-radius:22px;padding:28px;margin-bottom:20px;
   background:linear-gradient(135deg,#fff 0%,#f0f2ff 55%,#e8f7ff 100%);border:1px solid var(--line);
   box-shadow:0 1px 2px rgba(20,30,80,.04),0 18px 40px -22px rgba(70,60,200,.35)}
-.sc-orb{position:absolute;border-radius:50%;filter:blur(46px);opacity:.55;pointer-events:none}
+.sc-orb{position:absolute;border-radius:50%;filter:blur(46px);opacity:.55;pointer-events:none;will-change:transform;transform:translateZ(0)}
 .sc-orb-a{width:220px;height:220px;right:-50px;top:-70px;background:#a99bff;animation:scFloat 9s ease-in-out infinite}
 .sc-orb-b{width:180px;height:180px;right:140px;bottom:-90px;background:#7fdcff;animation:scFloat 11s ease-in-out infinite reverse}
 .sc-hero-row{position:relative;display:flex;align-items:center;gap:18px}
@@ -891,7 +891,7 @@ const css = `
 .sc-inline{color:var(--p);font-weight:600;text-decoration:underline;text-underline-offset:3px}
 
 @keyframes scSpin{to{transform:rotate(360deg)}}
-@keyframes scFloat{0%,100%{transform:translate(0,0)}50%{transform:translate(-18px,14px)}}
+@keyframes scFloat{0%,100%{transform:translate(0,0)}50%{transform:translate(-26px,18px)}}
 @keyframes scDot{0%{box-shadow:0 0 0 0 rgba(16,185,129,.55)}80%,100%{box-shadow:0 0 0 8px rgba(16,185,129,0)}}
 @keyframes scShine{to{left:130%}}
 
@@ -910,9 +910,8 @@ const css = `
   .sc-actions{flex-direction:column-reverse}
   .sc-actions button{width:100%}
 }
-@media (prefers-reduced-motion:reduce){
-  .sc-root *,.sc-root *::after{animation:none !important;transition:none !important}
-}
+/* Removed the blanket prefers-reduced-motion rule: many Windows/Linux PCs report reduced-motion
+   (animations off in OS, power saver, remote desktop) which froze every animation on desktop while phones kept working. */
 `;
 
 export default SocialIntegrations;

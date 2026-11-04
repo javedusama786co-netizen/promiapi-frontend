@@ -258,7 +258,7 @@ function Integrations() {
   };
 
   return (
-    <MotionConfig reducedMotion="user">
+    <MotionConfig reducedMotion="never">
       <div className="ig-root">
         <style>{css}</style>
         <div className="ig-wrap">
@@ -433,7 +433,7 @@ const css = `
 .ig-hero{position:relative;overflow:hidden;border-radius:22px;padding:28px;margin-bottom:20px;
   background:linear-gradient(135deg,#fff 0%,#f0f2ff 55%,#e8f7ff 100%);border:1px solid var(--line);
   box-shadow:0 1px 2px rgba(20,30,80,.04),0 18px 40px -22px rgba(70,60,200,.35)}
-.ig-orb{position:absolute;border-radius:50%;filter:blur(46px);opacity:.55;pointer-events:none}
+.ig-orb{position:absolute;border-radius:50%;filter:blur(46px);opacity:.55;pointer-events:none;will-change:transform;transform:translateZ(0)}
 .ig-orb-a{width:220px;height:220px;right:-50px;top:-70px;background:#a99bff;animation:igFloat 9s ease-in-out infinite}
 .ig-orb-b{width:180px;height:180px;right:140px;bottom:-90px;background:#7fdcff;animation:igFloat 11s ease-in-out infinite reverse}
 .ig-hero-row{position:relative;display:flex;align-items:center;gap:18px}
@@ -543,7 +543,7 @@ const css = `
 .ig-note-icon{display:grid;color:#2f7cf6;margin-top:1px;flex-shrink:0}
 
 @keyframes igSpin{to{transform:rotate(360deg)}}
-@keyframes igFloat{0%,100%{transform:translate(0,0)}50%{transform:translate(-18px,14px)}}
+@keyframes igFloat{0%,100%{transform:translate(0,0)}50%{transform:translate(-26px,18px)}}
 @keyframes igPulse{0%,100%{transform:scale(1)}50%{transform:scale(.9)}}
 
 @media (max-width:768px){
@@ -557,9 +557,8 @@ const css = `
   .ig-copy{width:100%}
   .ig-upgrade{width:100%;text-align:center}
 }
-@media (prefers-reduced-motion:reduce){
-  .ig-root *,.ig-root *::after{animation:none !important;transition:none !important}
-}
+/* Removed the blanket prefers-reduced-motion rule: many Windows/Linux PCs report reduced-motion
+   (animations off in OS, power saver, remote desktop) which froze every animation on desktop while phones kept working. */
 `;
 
 export default Integrations;

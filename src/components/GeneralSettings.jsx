@@ -293,7 +293,7 @@ function GeneralSettings() {
   const canUpload = isEditable && isUltimatePlan && !uploadingLogo;
 
   return (
-    <MotionConfig reducedMotion="user">
+    <MotionConfig reducedMotion="never">
       <div className="gs-root">
         <style>{css}</style>
 
@@ -536,7 +536,7 @@ const css = `
 .gs-hero{position:relative;overflow:hidden;border-radius:22px;padding:26px 28px;margin-bottom:20px;
   background:linear-gradient(135deg,#fff 0%,#f0f2ff 55%,#e8f7ff 100%);border:1px solid var(--line);
   box-shadow:0 1px 2px rgba(20,30,80,.04),0 18px 40px -22px rgba(70,60,200,.35)}
-.gs-orb{position:absolute;border-radius:50%;filter:blur(46px);opacity:.55;pointer-events:none}
+.gs-orb{position:absolute;border-radius:50%;filter:blur(46px);opacity:.55;pointer-events:none;will-change:transform;transform:translateZ(0)}
 .gs-orb-a{width:220px;height:220px;right:-50px;top:-70px;background:#a99bff;animation:gsFloat 9s ease-in-out infinite}
 .gs-orb-b{width:180px;height:180px;right:140px;bottom:-90px;background:#7fdcff;animation:gsFloat 11s ease-in-out infinite reverse}
 .gs-hero-row{position:relative;display:flex;align-items:center;justify-content:space-between;gap:20px}
@@ -644,7 +644,7 @@ const css = `
 .gs-toast-body{margin-top:2px;font-size:13px;line-height:1.45;color:var(--muted)}
 
 @keyframes gsSpin{to{transform:rotate(360deg)}}
-@keyframes gsFloat{0%,100%{transform:translate(0,0)}50%{transform:translate(-18px,14px)}}
+@keyframes gsFloat{0%,100%{transform:translate(0,0)}50%{transform:translate(-26px,18px)}}
 @keyframes gsPulse{0%,100%{transform:scale(1)}50%{transform:scale(.9)}}
 @keyframes gsShine{to{left:130%}}
 
@@ -660,9 +660,8 @@ const css = `
   .gs-savebar{bottom:10px}
   .gs-input-color{width:100%;flex:1}
 }
-@media (prefers-reduced-motion:reduce){
-  .gs-root *,.gs-root *::after{animation:none !important;transition:none !important}
-}
+/* Removed the blanket prefers-reduced-motion rule: many Windows/Linux PCs report reduced-motion
+   (animations off in OS, power saver, remote desktop) which froze every animation on desktop while phones kept working. */
 `;
 
 export default GeneralSettings;
