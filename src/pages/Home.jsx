@@ -41,17 +41,35 @@ const Icons = {
   )
 };
 
-const META_LOGO_SRC = "/meta-logo.svg";
-const MetaLogo = ({ size = 28, id = "m", tone = "auto" }) => {
-  const [ok, setOk] = useState(true);
-  if (ok) {
-    return <img src={META_LOGO_SRC} alt="Meta" height={size} className={`meta-img ${tone === "white" ? "w" : tone === "auto" ? "a" : ""}`} style={{ height: size, width: "auto" }} onError={() => setOk(false)} />;
+// Official Meta logo (infinity symbol + "Meta" wordmark). The artwork is NOT redrawn here: put the files Meta
+// publishes in /public  ->  meta-logo.webp (full colour)  and meta-logo-white.webp (for dark / blue
+// backgrounds). If the white file is missing, the SAME official logo is shown as a white silhouette.
+const META_LOGO_COLOR = "/meta-logo.webp";
+const META_LOGO_WHITE = "/meta-logo-white.webp";
+// symbol = true  ->  only the infinity mark (the left part of the official logo, cropped, not redrawn)
+const META_SYMBOL_ASPECT = 1.54; // width / height of the infinity mark inside the logo file
+const MetaLogo = ({ size = 28, tone = "color", symbol = false }) => {
+  const [whiteMissing, setWhiteMissing] = useState(false);
+  const [missing, setMissing] = useState(false);
+  const wantWhite = tone === "white";
+  if (missing) {
+    return <span style={{ fontWeight: 700, fontSize: size * 0.95, letterSpacing: "-0.02em", lineHeight: 1 }}>Meta</span>;
   }
+  const useWhiteFile = wantWhite && !whiteMissing;
+  const img = (
+    <img
+      src={useWhiteFile ? META_LOGO_WHITE : META_LOGO_COLOR}
+      alt="Meta"
+      className="meta-img"
+      style={{ height: size, width: "auto", maxWidth: "none", display: "block", flexShrink: 0, filter: wantWhite && whiteMissing ? "brightness(0) invert(1)" : undefined }}
+      onError={() => (useWhiteFile ? setWhiteMissing(true) : setMissing(true))}
+    />
+  );
+  if (!symbol) return img;
   return (
-    <svg width={size * 1.6} height={size} viewBox="0 0 64 40" fill="none" aria-label="Meta">
-      <defs><linearGradient id={`mg-${id}`} x1="0" y1="0" x2="1" y2="0"><stop offset="0" stopColor="#0064E0" /><stop offset="1" stopColor="#0866FF" /></linearGradient></defs>
-      <path d="M32 20C40 6 58 6 58 20C58 34 40 34 32 20C24 6 6 6 6 20C6 34 24 34 32 20Z" stroke={tone === "white" ? "#fff" : `url(#mg-${id})`} strokeWidth="5.5" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
+    <span className="meta-symbol" style={{ display: "block", width: size * META_SYMBOL_ASPECT, height: size, overflow: "hidden", flexShrink: 0 }}>
+      {img}
+    </span>
   );
 };
 
@@ -575,7 +593,7 @@ function Home() {
       <section className="sec">
         <div className="wrap">
           <Reveal className="head center">
-            <div className="pill meta"><MetaLogo size={14} id="pill" tone="auto" /> Official Meta Business Partner</div>
+            <div className="pill meta"><MetaLogo size={16} tone={isDarkMode ? "white" : "color"} /> Official Meta Business Partner</div>
             <h2>Your number, protected. Your brand, verified.</h2>
             <p>We're a certified Meta Cloud API technology partner, not a third-party workaround — so your number never risks a ban, and customers see your real business name with a verified blue tick.</p>
           </Reveal>
@@ -583,7 +601,7 @@ function Home() {
             <div className="seal-col">
               <div className="seal">
                 <div className="seal-ring" />
-                <div className="seal-core"><div className="shine" /><MetaLogo size={46} id="seal" tone="white" /></div>
+                <div className="seal-core"><div className="shine" /><MetaLogo size={46} tone="white" symbol /></div>
               </div>
               <b>Official Meta Business Partner</b>
               <span>Certified WhatsApp Cloud API Provider</span>
@@ -619,7 +637,7 @@ function Home() {
               </motion.div>
             ))}
           </div>
-          <div className="seals"><MetaLogo size={22} id="seals" tone="auto" /><span>Meta Business Partner</span><span>WhatsApp Business Platform</span><span>Cloud API provider</span></div>
+          <div className="seals"><MetaLogo size={22} tone={isDarkMode ? "white" : "color"} /><span>Meta Business Partner</span><span>WhatsApp Business Platform</span><span>Cloud API provider</span></div>
         </div>
       </section>
 
@@ -903,7 +921,7 @@ const CSS = `
 .hx[data-theme=light] .chip{background:rgba(255,255,255,.9);color:#0a1226}
 .chip span{color:var(--sub);font-size:11.5px}.chip.c3{flex-direction:row;align-items:center;gap:8px}
 .chip .bar{height:4px;border-radius:4px;background:rgba(255,255,255,.1);overflow:hidden;margin-top:3px}.chip .bar i{display:block;height:100%;background:linear-gradient(90deg,#0866FF,#3DD6FF);border-radius:4px;animation:grow 2.4s ease-in-out infinite alternate}
-.c1{top:10px;left:-40px;--tz:120px}.c2{bottom:30px;left:-50px;--tz:140px}.c3{top:80px;right:-40px;--tz:110px}
+.c1{top:6px;left:-124px;--tz:120px}.c2{bottom:24px;left:-132px;--tz:140px}.c3{top:96px;right:-128px;--tz:110px;white-space:normal;max-width:170px}
 .hero-float{animation:float 4.6s ease-in-out infinite var(--d,0s)}
 
 /* strip */
@@ -1000,7 +1018,7 @@ const CSS = `
 
 /* cta */
 .cta{position:relative;overflow:hidden;text-align:center;border-radius:32px;padding:90px 30px;background:radial-gradient(700px 320px at 50% 0%,rgba(8,102,255,.5),transparent 70%),linear-gradient(135deg,#070d1f,#10173a);border:1px solid rgba(8,102,255,.35);color:#fff}
-.cta .neural{opacity:.55}.cta-in{position:relative;z-index:2}.cta h2{color:#fff;margin:22px 0 16px}.cta p{color:#b6c3e0;font-size:18px;max-width:600px;margin:0 auto 36px}
+.cta .neural{opacity:.55}.cta-in{position:relative;z-index:2}.cta-in>.meta-img{margin-left:auto;margin-right:auto}.cta h2{color:#fff;margin:22px 0 16px}.cta p{color:#b6c3e0;font-size:18px;max-width:600px;margin:0 auto 36px}
 
 /* footer */
 .foot{background:var(--s1);border-top:1px solid var(--ln);padding:90px 0 36px;color:var(--sub)}
@@ -1025,7 +1043,7 @@ const CSS = `
 .hxc-trail{inset:0;width:100vw;height:100vh;z-index:9998}
 .hxc-dot{width:10px;height:10px;margin:-5px 0 0 -5px;border-radius:50%;background:#fff;mix-blend-mode:difference;box-shadow:0 0 14px rgba(61,214,255,.9);z-index:10001}
 .hxc-tag{z-index:10002}.hxc-tag span{display:block;margin:18px 0 0 18px;padding:5px 12px;border-radius:99px;background:rgba(8,12,24,.88);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border:1px solid rgba(61,214,255,.55);color:#fff;font:700 11.5px 'Hanken Grotesk',sans-serif;letter-spacing:.2px;white-space:nowrap;box-shadow:0 10px 24px rgba(0,0,0,.35)}
-.meta-img{display:block;flex-shrink:0}.meta-img.w{filter:brightness(0) invert(1)}.hx[data-theme=dark] .meta-img.a{filter:brightness(0) invert(1)}
+.meta-img{display:block;flex-shrink:0}
 .hxc-spot{width:560px;height:560px;margin:-280px 0 0 -280px;border-radius:50%;background:radial-gradient(circle,rgba(8,102,255,.17),transparent 65%);z-index:40}
 @media(pointer:coarse){.hxc{display:none}}
 
@@ -1122,6 +1140,7 @@ const CSS = `
  .hero-grid{gap:40px}.phone-stage{padding:40px 36px}.phone{width:300px}
  .omni-grid,.ai-grid,.contact-grid{gap:44px}
  .p1{left:-70px}.p2{right:-90px}.p3{left:-60px}
+ .c1{left:-96px}.c2{left:-104px}.c3{right:-100px;max-width:150px}
  .hero-grid>*,.omni-grid>*,.ai-grid>*,.contact-grid>*,.growth>*,.trust>*{min-width:0}
 }
 
