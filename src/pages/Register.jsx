@@ -3,6 +3,9 @@ import axios from "axios";
 import { useGoogleLogin } from "@react-oauth/google";
 import { CountrySelect, BUSINESS_TYPES } from "./Countryselect";
 
+// Bump this date whenever the Terms / Privacy Policy change in a way that needs fresh consent
+const TERMS_VERSION = "2026-11-05";
+
 function Register() {
   const [formData, setFormData] = useState({
     companyName: "", firstName: "", lastName: "",
@@ -16,6 +19,8 @@ function Register() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [consentError, setConsentError] = useState(false);
 
   // 🔑 Dynamic Backend Base URL
   const BACKEND_URL =
@@ -57,6 +62,20 @@ function Register() {
       document.body.appendChild(apScript);
     }
   }, []);
+
+  // ✅ Terms + Privacy consent: required for email sign-up AND for Google / Facebook / Apple sign-up
+  const requireConsent = () => {
+    if (acceptedTerms) return true;
+    setConsentError(true);
+    setError("Please accept the Terms of Service and Privacy Policy to continue.");
+    return false;
+  };
+
+  // what the backend should store as proof of consent
+  const consentPayload = () => {
+    try { localStorage.setItem("promi_terms_accepted", TERMS_VERSION); } catch (_) { /* ignore */ }
+    return { acceptedTerms: true, termsVersion: TERMS_VERSION, termsAcceptedAt: new Date().toISOString() };
+  };
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -148,6 +167,7 @@ function Register() {
     if (step === 1) {
       const msg = validateStep1();
       if (msg) { setError(msg); return; }
+      if (!requireConsent()) { goTop(); return; }
       setStep(2);
       goTop();
       return;
@@ -156,6 +176,7 @@ function Register() {
     // ---- Step 2 -> validate everything, then register ----
     const msg = validateStep1() || validateStep2();
     if (msg) { setError(msg); return; }
+    if (!requireConsent()) { setStep(1); goTop(); return; }
 
     let timezone = "UTC";
     try {
@@ -172,6 +193,7 @@ function Register() {
       state: formData.state.trim(),
       postalCode: formData.postalCode.trim(),
       timezone,
+      ...consentPayload(),
     };
 
     setLoading(true);
@@ -210,7 +232,7 @@ function Register() {
     try {
       setLoading(true);
       setError("");
-      const res = await axios.post(`${BACKEND_URL}/api/auth/social-login`, payload);
+      const res = await axios.post(`${BACKEND_URL}/api/auth/social-login`, { ...payload, ...consentPayload() });
       setLoading(false);
       finishSocialAuth(res.data);
     } catch (err) {
@@ -232,6 +254,7 @@ function Register() {
 
   const handleSocialLogin = (provider) => {
     setError("");
+    if (!requireConsent()) return;
 
     if (provider === "google") {
       googleLogin();
@@ -473,6 +496,24 @@ function Register() {
 
           {step === 1 && (
             <>
+              {/* REQUIRED CONSENT: covers email AND social sign-up */}
+              <label className={`rg-consent ${consentError && !acceptedTerms ? "rg-consent--err" : ""}`}>
+                <input
+                  type="checkbox"
+                  checked={acceptedTerms}
+                  onChange={(e) => {
+                    setAcceptedTerms(e.target.checked);
+                    if (e.target.checked) {
+                      setConsentError(false);
+                      setError((prev) => (/accept the Terms/i.test(prev) ? "" : prev));
+                    }
+                  }}
+                />
+                <span>
+                  I agree to the <a href="/terms" target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>Terms of Service</a> and <a href="/policy" target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>Privacy Policy</a>, and I will only message people who have opted in, as required by the <a href="https://business.whatsapp.com/policy" target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>WhatsApp Business Messaging Policy</a>.
+                </span>
+              </label>
+
               {/* OFFICIAL SOCIAL LOGIN BUTTONS */}
               <div className="rg-social-grid">
                 <button type="button" className="rg-social-btn" onClick={() => handleSocialLogin("google")} disabled={loading}>
@@ -842,6 +883,18 @@ const css = `
   border: 1px solid #fecaca; color: #b91c1c; padding: 10px 14px;
   border-radius: 10px; font-size: 13px; margin-bottom: 12px;
 }
+
+.rg-consent {
+  display: flex; gap: 10px; align-items: flex-start; padding: 11px 13px; margin-bottom: 14px;
+  border: 1px solid #e2e8f0; border-radius: 12px; background: #f8fafc; cursor: pointer;
+  font-size: 12.5px; line-height: 1.55; color: #475569; transition: border-color .2s, background .2s;
+}
+.rg-consent input { width: 18px; height: 18px; margin: 1px 0 0; flex-shrink: 0; accent-color: #2563eb; cursor: pointer; }
+.rg-consent a { color: #2563eb; font-weight: 600; text-decoration: none; }
+.rg-consent a:hover { text-decoration: underline; }
+.rg-consent:has(input:checked) { border-color: rgba(37,99,235,.45); background: rgba(37,99,235,.05); }
+.rg-consent--err { border-color: #f87171; background: #fef2f2; animation: rgShake .35s; }
+@keyframes rgShake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
 
 .rg-form { display: flex; flex-direction: column; gap: 10px; }
 

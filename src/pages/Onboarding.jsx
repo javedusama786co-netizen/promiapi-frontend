@@ -4,6 +4,20 @@ import { useNavigate } from "react-router-dom";
 import { motion, useMotionValue, useSpring, useTransform } from "framer-motion";
 import { GlobalLoader } from "../App";
 
+// Bump this date whenever the Terms / Privacy Policy change in a way that needs fresh consent
+const TERMS_VERSION = "2026-11-05";
+
+// true when this user already accepted the Terms (ticked at Register, or saved on the account)
+const hasAcceptedTerms = () => {
+  try {
+    if (localStorage.getItem("promi_terms_accepted") === TERMS_VERSION) return true;
+    const u = JSON.parse(localStorage.getItem("user") || "{}");
+    return !!(u && u.termsAcceptedAt);
+  } catch (_) {
+    return false;
+  }
+};
+
 const BUSINESS_TYPES = [
   "Retail / E-commerce",
   "Restaurant / Food & Beverage",
@@ -144,6 +158,10 @@ function Onboarding() {
   const [step, setStep] = useState(1);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  // People who signed up with Google / Facebook / Apple never saw the Register checkbox, so ask here
+  const [needsConsent] = useState(() => !hasAcceptedTerms());
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [consentError, setConsentError] = useState(false);
   const [showGlobalLoader, setShowGlobalLoader] = useState(false);
 
   const navigate = useNavigate();
@@ -244,6 +262,11 @@ function Onboarding() {
       setError(msg);
       return;
     }
+    if (needsConsent && !termsAccepted) {
+      setConsentError(true);
+      setError("Please accept the Terms of Service and Privacy Policy to continue.");
+      return;
+    }
     setLoading(true);
 
     let timezone = "UTC";
@@ -265,6 +288,9 @@ function Onboarding() {
         postalCode: postalCode.trim(),
         country,
         timezone,
+        ...(needsConsent
+          ? { acceptedTerms: true, termsVersion: TERMS_VERSION, termsAcceptedAt: new Date().toISOString() }
+          : {}),
       };
 
       // Backend API call to update user profile
@@ -273,6 +299,9 @@ function Onboarding() {
       });
 
       if (res.data && res.data.success) {
+        if (needsConsent) {
+          try { localStorage.setItem("promi_terms_accepted", TERMS_VERSION); } catch (_) { /* ignore */ }
+        }
         // Merge EVERYTHING the server saved (id, username, company, phone, settings...) into the session
         const serverUser = res.data.user || {};
         let storedUser = {};
@@ -617,6 +646,26 @@ function Onboarding() {
               </div>
             )}
 
+            {step === 2 && needsConsent && (
+              <label className={`lg-consent ${consentError && !termsAccepted ? "lg-consent--err" : ""}`}>
+                <input
+                  type="checkbox"
+                  checked={termsAccepted}
+                  disabled={loading}
+                  onChange={(e) => {
+                    setTermsAccepted(e.target.checked);
+                    if (e.target.checked) {
+                      setConsentError(false);
+                      setError((prev) => (/accept the Terms/i.test(prev) ? "" : prev));
+                    }
+                  }}
+                />
+                <span>
+                  I agree to the <a href="/terms" target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>Terms of Service</a> and <a href="/policy" target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>Privacy Policy</a>, and I will only message people who have opted in, as required by the <a href="https://business.whatsapp.com/policy" target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>WhatsApp Business Messaging Policy</a>.
+                </span>
+              </label>
+            )}
+
             <div className="lg-actions">
               {step === 2 && (
                 <button type="button" className="lg-back" onClick={handleBack} disabled={loading}>
@@ -697,6 +746,13 @@ const css = `
 
 .lg-error { display: flex; gap: 10px; align-items: flex-start; background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c; padding: 12px 14px; border-radius: 12px; font-size: 14px; line-height: 1.45; margin-bottom: 22px; }
 .lg-error svg { flex-shrink: 0; margin-top: 1px; }
+.lg-consent { display: flex; gap: 11px; align-items: flex-start; padding: 13px 15px; border: 1px solid #e2e8f0; border-radius: 12px; background: #f8fafc; cursor: pointer; font-size: 13.5px; line-height: 1.55; color: #475569; transition: border-color .2s, background .2s; }
+.lg-consent input { width: 19px; height: 19px; margin: 1px 0 0; flex-shrink: 0; accent-color: #2563eb; cursor: pointer; }
+.lg-consent a { color: #2563eb; font-weight: 600; text-decoration: none; }
+.lg-consent a:hover { text-decoration: underline; }
+.lg-consent:has(input:checked) { border-color: rgba(37,99,235,.45); background: rgba(37,99,235,.05); }
+.lg-consent--err { border-color: #f87171; background: #fef2f2; animation: lgShake .35s; }
+@keyframes lgShake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
 .lg-form { display: flex; flex-direction: column; gap: 20px; }
 .lg-field { display: flex; flex-direction: column; gap: 8px; }
 .lg-field label { font-size: 14px; font-weight: 600; color: #334155; }

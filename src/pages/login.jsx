@@ -395,6 +395,10 @@ function Login() {
             </button>
           </div>
 
+          <p className="lg-terms-note">
+            By continuing with Google, Facebook or Apple you agree to our <a href="/terms" target="_blank" rel="noopener noreferrer">Terms of Service</a> and <a href="/policy" target="_blank" rel="noopener noreferrer">Privacy Policy</a>.
+          </p>
+
           <div className="lg-divider"><span>or sign in with email</span></div>
 
           {error && (
@@ -567,6 +571,10 @@ const css = `
   opacity: .6;
   cursor: not-allowed;
 }
+
+.lg-terms-note { margin: 10px 0 0; font-size: 12px; line-height: 1.5; color: #64748b; text-align: center; }
+.lg-terms-note a { color: #2563eb; font-weight: 600; text-decoration: none; }
+.lg-terms-note a:hover { text-decoration: underline; }
 
 .lg-divider {
   display: flex;

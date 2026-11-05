@@ -748,7 +748,7 @@ function Home() {
             <form onSubmit={(e) => e.preventDefault()}>
               <div className="form-row">
                 <label>Your Name<input type="text" placeholder="Ali Raza" /></label>
-                <label>WhatsApp Number<input type="text" placeholder="+92 326 5064865" /></label>
+                <label>WhatsApp Number<input type="text" placeholder="+92 3012345678" /></label>
               </div>
               <label>Business Type<input type="text" placeholder="E-commerce Store / Real Estate / Service" /></label>
               <label>Your Requirement<textarea rows="4" placeholder="AI Chatbot, Meta Verification, Campaign Automation..." /></label>
