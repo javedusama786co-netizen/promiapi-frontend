@@ -179,6 +179,67 @@ const Ico = ({ children, size = 18, sw = 2 }) => (
 
 const ease = [0.22, 1, 0.36, 1];
 
+// ---------- Subscription state reader ----------
+// The old check treated `success === true` as "subscribed". Almost every API answers { success: true } even when the
+// plan is expired / missing, so the "inactive subscription" alert could never appear. This reads the real signals:
+// expiry date, explicit flags, status text, or an empty subscription. It returns true / false, or null = "cannot tell"
+// (then the previous value is kept, so a failed request never flips the alert on or off by mistake).
+const ACTIVE_WORDS = ["active", "trialing", "trial", "paid", "running", "current", "valid", "subscribed"];
+const INACTIVE_WORDS = ["inactive", "expired", "cancelled", "canceled", "none", "unpaid", "past_due", "pastdue", "suspended", "pending", "incomplete", "ended", "terminated", "free", "no_subscription", "nosubscription", "not_subscribed"];
+const statusToBool = (s) => {
+  if (typeof s !== "string") return undefined;
+  const v = s.trim().toLowerCase();
+  if (!v) return undefined;
+  if (INACTIVE_WORDS.includes(v)) return false;
+  if (ACTIVE_WORDS.includes(v)) return true;
+  return undefined;
+};
+
+const readSubscriptionState = (raw) => {
+  if (!raw || typeof raw !== "object") return null;
+  const inner = raw.data && typeof raw.data === "object" && !Array.isArray(raw.data) ? raw.data : {};
+  const root = { ...raw, ...inner };
+  const subRaw = root.subscription !== undefined ? root.subscription : root.userSubscription;
+  const sub = subRaw && typeof subRaw === "object" ? subRaw : null;
+
+  // 1) an end date in the past always means "not active"
+  const endRaw =
+    sub?.endDate || sub?.expiresAt || sub?.expiryDate || sub?.currentPeriodEnd || sub?.validUntil ||
+    root.endDate || root.expiresAt || root.expiryDate || root.currentPeriodEnd || root.validUntil;
+  const endTs = endRaw ? new Date(endRaw).getTime() : NaN;
+  if (!Number.isNaN(endTs) && endTs < Date.now()) return false;
+
+  // 2) explicit yes / no flags
+  const flag = [root.active, root.isActive, root.subscribed, root.isSubscribed, root.hasActiveSubscription, root.subscriptionActive, sub?.active, sub?.isActive]
+    .find((v) => typeof v === "boolean");
+  if (flag !== undefined) return flag;
+
+  // 3) status text
+  for (const s of [root.status, root.subscriptionStatus, sub?.status, sub?.subscriptionStatus]) {
+    const b = statusToBool(s);
+    if (b !== undefined) return b;
+  }
+
+  // 4) "no subscription" answers, or a subscription object with nothing negative in it
+  if ((subRaw === null || subRaw === false) && ("subscription" in root || "userSubscription" in root)) return false;
+  if (sub) return true;
+  return null;
+};
+
+// Account / settings pages shown in the profile menu. The paths are the SAME ones the sidebar links to
+// (see Sidebar.jsx). Settings pages are for admins only, exactly like in the sidebar.
+const SETTINGS_LINKS = [
+  { to: "/dashboard/settings/general", label: "General Settings", icon: <><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></> },
+  { to: "/dashboard/settings/ai-chatbot", label: "AI Bot & Settings", icon: <><rect x="3" y="11" width="18" height="10" rx="2" /><circle cx="12" cy="5" r="2" /><path d="M12 7v4M8 16h.01M16 16h.01" /></> },
+  { to: "/dashboard/settings/whatsapp", label: "Social Channels Setup", icon: <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" /> },
+  { to: "/dashboard/integrations", label: "Integrations", icon: <><path d="M12 22v-5" /><path d="M9 8V2" /><path d="M15 8V2" /><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8z" /></> },
+  { to: "/dashboard/team", label: "Team Members", icon: <><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="8.5" cy="7" r="4" /><polyline points="17 11 19 13 23 9" /></> },
+  { to: "/dashboard/subscription", label: "Subscription & Billing", icon: <><rect x="1" y="4" width="22" height="16" rx="2" ry="2" /><line x1="1" y1="10" x2="23" y2="10" /></> },
+];
+
+const hpList = { hidden: {}, show: { transition: { staggerChildren: 0.035, delayChildren: 0.04 } } };
+const hpItem = { hidden: { opacity: 0, x: -8 }, show: { opacity: 1, x: 0, transition: { duration: 0.2, ease } } };
+
 function Header({ toggleSidebar }) {
   const { branding } = useBranding();
   const primaryColor = branding?.primaryColor || "#2563eb";
@@ -192,7 +253,12 @@ function Header({ toggleSidebar }) {
   const [unreadCount, setUnreadCount] = useState(0);
   const [notifications, setNotifications] = useState([]);
   const [user, setUser] = useState({ name: "User", role: "Client", avatar: "" });
-  const [isSubscribed, setIsSubscribed] = useState(true);
+  const [isSubscribed, setIsSubscribed] = useState(null); // null = not known yet (no alert until we know)
+  const [userEmail, setUserEmail] = useState("");
+  const [chatOpenMobile, setChatOpenMobile] = useState(false);
+  const [bannerDismissed, setBannerDismissed] = useState(() => {
+    try { return sessionStorage.getItem("hdr_sub_alert_dismissed") === "1"; } catch (e) { return false; }
+  });
 
   // Modal States
   const [showCropModal, setShowCropModal] = useState(false);
@@ -221,6 +287,7 @@ function Header({ toggleSidebar }) {
       }
 
       if (localUserParsed) {
+        setUserEmail(localUserParsed.email || "");
         setUser({
           name: extractUserName(localUserParsed),
           role: localUserParsed.role || "Client",
@@ -254,6 +321,7 @@ function Header({ toggleSidebar }) {
         const rawAvatar = liveUser.avatar || liveUser.profilePic || localUserParsed?.avatar || "";
         const avatarUrl = formatAvatarUrl(rawAvatar);
         currentRole = liveUser.role || localUserParsed?.role || "Client";
+        setUserEmail(liveUser.email || localUserParsed?.email || "");
 
         setUser({ name: realName, role: currentRole, avatar: avatarUrl });
         
@@ -266,23 +334,33 @@ function Header({ toggleSidebar }) {
         }));
       }
 
-      if (currentRole === "Agent") {
+      if (String(currentRole).toLowerCase() === "agent") {
         setIsSubscribed(true);
       } else {
+        let subStatus = null;
         const subResponse = await axios.get(`${API_BASE_URL}/api/subscription/user/subscription`, {
           headers: { Authorization: `Bearer ${token}` }
-        }).catch(() => null);
+        }).catch((err) => {
+          if (err?.response?.status === 402) subStatus = false; // 402 Payment Required = no active plan
+          return null;
+        });
 
         if (subResponse && subResponse.data) {
-          const isUserActive = subResponse.data.active === true ||
-            subResponse.data.subscribed === true ||
-            subResponse.data.success === true ||
-            subResponse.data.status === "active" ||
-            (subResponse.data.data && subResponse.data.data.status === "active");
-          setIsSubscribed(isUserActive);
-        } else if (localUserParsed) {
-          setIsSubscribed(localUserParsed.subscribed === true || localUserParsed.active === true || localUserParsed.status === "active");
+          const parsed = readSubscriptionState(subResponse.data);
+          if (parsed !== null) subStatus = parsed;
+          else console.info("[Header] Could not read the subscription answer, check its shape:", subResponse.data);
         }
+
+        // request failed completely: fall back to what the saved user record says (no guessing from "status")
+        if (subStatus === null && localUserParsed) {
+          subStatus = readSubscriptionState({
+            subscribed: localUserParsed.subscribed,
+            isSubscribed: localUserParsed.isSubscribed,
+            subscriptionStatus: localUserParsed.subscriptionStatus,
+          });
+        }
+
+        if (subStatus !== null) setIsSubscribed(subStatus);
       }
 
     } catch (error) {
@@ -460,7 +538,9 @@ function Header({ toggleSidebar }) {
 
   useEffect(() => {
     fetchHeaderData();
-    const interval = setInterval(fetchHeaderData, 10000);
+    const interval = setInterval(() => { if (!document.hidden) fetchHeaderData(); }, 10000);
+    const onVisible = () => { if (!document.hidden) fetchHeaderData(); };
+    document.addEventListener("visibilitychange", onVisible);
 
     const handleCampaignNotification = () => fetchHeaderData();
     window.addEventListener("campaignCompleted", handleCampaignNotification);
@@ -470,9 +550,10 @@ function Header({ toggleSidebar }) {
       if (profileRef.current && !profileRef.current.contains(event.target)) setShowProfileMenu(false);
     }
 
-    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("pointerdown", handleClickOutside);
     return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("pointerdown", handleClickOutside);
+      document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("campaignCompleted", handleCampaignNotification);
       clearInterval(interval);
     };
@@ -493,7 +574,15 @@ function Header({ toggleSidebar }) {
     if (path.includes("/templates")) return "Message Templates";
     if (path.includes("/dashboard/logs")) return "System Activity Logs";
     if (path.includes("/dashboard/chats")) return "Live Conversational Hub";
+    if (path.includes("/dashboard/settings/general")) return "General Settings";
+    if (path.includes("/dashboard/settings/ai-chatbot")) return "AI Bot & Settings";
+    if (path.includes("/dashboard/settings/whatsapp")) return "Social Channels Setup";
     if (path.includes("/dashboard/settings")) return "Global System Configurations";
+    if (path.includes("/dashboard/integrations")) return "Integrations";
+    if (path.includes("/dashboard/analytics")) return "Analytics";
+    if (path.includes("/dashboard/qr")) return "Growth Tools";
+    if (path.includes("/dashboard/team")) return "Team Members";
+    if (path.includes("/dashboard/subscription")) return "My Subscription";
     return "Control Dashboard";
   };
 
@@ -536,7 +625,57 @@ function Header({ toggleSidebar }) {
     return () => document.removeEventListener("keydown", onKey);
   }, []);
 
+  // MOBILE ONLY: while a conversation is open in Chats, the header steps aside so the chat gets the whole screen.
+  // (Chats shows `.chat-area .chat-header` on phones only after a chat is opened; the back arrow brings the list back.)
+  useEffect(() => {
+    if (!location.pathname.toLowerCase().includes("/dashboard/chats")) {
+      setChatOpenMobile(false);
+      return undefined;
+    }
+    let raf = 0;
+    const check = () => {
+      raf = 0;
+      const open = window.innerWidth <= 768 && !!document.querySelector(".chats-root .chat-area .chat-header");
+      setChatOpenMobile((prev) => (prev === open ? prev : open));
+    };
+    const schedule = () => { if (!raf) raf = requestAnimationFrame(check); };
+    check();
+    const mo = new MutationObserver(schedule);
+    mo.observe(document.body, { childList: true, subtree: true });
+    window.addEventListener("resize", schedule);
+    return () => {
+      mo.disconnect();
+      window.removeEventListener("resize", schedule);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [location.pathname]);
+
+  // lets the chat screen use the full height while the header is hidden, and closes any open popover
+  useEffect(() => {
+    document.body.classList.toggle("pm-chat-open", chatOpenMobile);
+    if (chatOpenMobile) {
+      setShowNotifications(false);
+      setShowProfileMenu(false);
+    }
+    return () => document.body.classList.remove("pm-chat-open");
+  }, [chatOpenMobile]);
+
   const pageTitle = getPageTitle();
+  const isAgent = String(user.role || "").toLowerCase() === "agent";
+  const showUpsell = !isAgent && isSubscribed === false;
+  const onSubscriptionPage = location.pathname.toLowerCase().includes("/subscription");
+  const showBanner = showUpsell && !bannerDismissed && !onSubscriptionPage;
+
+  const dismissBanner = () => {
+    setBannerDismissed(true);
+    try { sessionStorage.setItem("hdr_sub_alert_dismissed", "1"); } catch (e) { /* ignore */ }
+  };
+  // a fresh "inactive" result after the user had dismissed it earlier is still dismissed for this session only
+  const goTo = (path) => {
+    setShowProfileMenu(false);
+    setShowNotifications(false);
+    navigate(path);
+  };
 
   // Notifications view-model: opening the bell clears the badge (existing behavior),
   // but items that were unread stay highlighted until the panel closes.
@@ -598,13 +737,15 @@ function Header({ toggleSidebar }) {
       <MotionConfig reducedMotion="user">
         <style>{css}</style>
 
-        <header className="hdr">
+        <header className={`hdr${chatOpenMobile ? " hdr--chat" : ""}`}>
           {/* LEFT: burger + title */}
           <div className="hdr-left">
             <button type="button" className="hdr-burger" onClick={toggleSidebar} aria-label="Toggle Sidebar">
               <Ico size={20} sw={2.4}><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="18" x2="21" y2="18" /></Ico>
             </button>
             <span className="hdr-bar" />
+            <div className="hdr-titles">
+            <span className="hdr-eyebrow">Workspace</span>
             <AnimatePresence mode="wait" initial={false}>
               <motion.h2
                 key={pageTitle}
@@ -617,13 +758,14 @@ function Header({ toggleSidebar }) {
                 {pageTitle}
               </motion.h2>
             </AnimatePresence>
+            </div>
           </div>
 
           {/* RIGHT: actions */}
           <div className="hdr-right">
             {/* GO PRO */}
             <AnimatePresence>
-              {user.role !== "Agent" && isSubscribed === false && (
+              {showUpsell && (
                 <motion.button
                   type="button"
                   initial={{ opacity: 0, scale: 0.85 }}
@@ -636,6 +778,7 @@ function Header({ toggleSidebar }) {
                 >
                   <Ico size={15} sw={2.4}><path d="m12 3-1.9 5.8a2 2 0 0 1-1.28 1.28L3 12l5.8 1.9a2 2 0 0 1 1.28 1.28L12 21l1.9-5.8a2 2 0 0 1 1.28-1.28L21 12l-5.8-1.9a2 2 0 0 1-1.28-1.28L12 3z" /></Ico>
                   <span className="hdr-pro-text">Go Pro</span>
+                  <span className="hdr-pro-dot" aria-hidden="true" />
                 </motion.button>
               )}
             </AnimatePresence>
@@ -805,27 +948,88 @@ function Header({ toggleSidebar }) {
                   >
                     <div className="hp-banner">
                       <div className="hp-avatar">
-                        {avatarNode(46)}
+                        {avatarNode(48)}
                         <button type="button" onClick={handleOpenModal} className="hp-camera" title="Upload Avatar" aria-label="Upload Avatar">
                           <Ico size={11} sw={2.6}><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" /><circle cx="12" cy="13" r="4" /></Ico>
                         </button>
                       </div>
                       <div className="hp-who">
                         <span className="hp-name">{user.name}</span>
+                        {userEmail && <span className="hp-email">{userEmail}</span>}
                         <span className="hp-role">{user.role}</span>
                       </div>
                     </div>
 
-                    <div className="hp-items">
-                      <button type="button" role="menuitem" className="hp-item" onClick={handleOpenModal}>
-                        <Ico size={16}><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></Ico>
+                    {!isAgent && isSubscribed !== null && (
+                      <div className="hp-plan">
+                        <span className="hp-plan-l">
+                          <i className={`hp-plan-dot ${isSubscribed ? "on" : "off"}`} />
+                          <span>Subscription<b>{isSubscribed ? "Active" : "Not active"}</b></span>
+                        </span>
+                        {!isSubscribed && (
+                          <button type="button" className="hp-plan-btn" onClick={() => goTo("/dashboard/subscription")}>Upgrade</button>
+                        )}
+                      </div>
+                    )}
+
+                    <motion.div className="hp-items" variants={hpList} initial="hidden" animate="show">
+                      <div className="hp-label">Account</div>
+                      <motion.button variants={hpItem} type="button" role="menuitem" className="hp-item" onClick={handleOpenModal}>
+                        <span className="hp-ic"><Ico size={16}><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></Ico></span>
                         Change Picture
-                      </button>
+                        <span className="hp-go"><Ico size={14} sw={2.4}><polyline points="9 18 15 12 9 6" /></Ico></span>
+                      </motion.button>
+                      <motion.button
+                        variants={hpItem}
+                        type="button"
+                        role="menuitem"
+                        className="hp-item"
+                        onClick={() => { setShowProfileMenu(false); if (!showNotifications) onBellClick(); }}
+                      >
+                        <span className="hp-ic"><Ico size={16}>{KIND_PATH.info}</Ico></span>
+                        Notifications
+                        {unreadCount > 0 && <span className="hp-go" style={{ opacity: 1, transform: "none", color: "#e11d48", fontWeight: 800, fontSize: 12 }}>{unreadCount > 9 ? "9+" : unreadCount}</span>}
+                      </motion.button>
+
+                      {!isAgent && (
+                        <>
+                          <div className="hp-div" />
+                          <div className="hp-label">Settings</div>
+                          {SETTINGS_LINKS.map((item) => (
+                            <motion.button
+                              key={item.to}
+                              variants={hpItem}
+                              type="button"
+                              role="menuitem"
+                              className={`hp-item${location.pathname.toLowerCase().startsWith(item.to) ? " is-current" : ""}`}
+                              onClick={() => goTo(item.to)}
+                            >
+                              <span className="hp-ic"><Ico size={16}>{item.icon}</Ico></span>
+                              {item.label}
+                              <span className="hp-go"><Ico size={14} sw={2.4}><polyline points="9 18 15 12 9 6" /></Ico></span>
+                            </motion.button>
+                          ))}
+                        </>
+                      )}
+
                       <div className="hp-div" />
-                      <button type="button" role="menuitem" className="hp-item is-danger" onClick={handleOpenLogoutModal}>
-                        <Ico size={16}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></Ico>
+                      <div className="hp-label">Support</div>
+                      <motion.button variants={hpItem} type="button" role="menuitem" className="hp-item" onClick={() => { setShowProfileMenu(false); window.location.href = "mailto:support@promiapi.com"; }}>
+                        <span className="hp-ic"><Ico size={16}><circle cx="12" cy="12" r="10" /><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /><line x1="12" y1="17" x2="12.01" y2="17" /></Ico></span>
+                        Help &amp; Support
+                        <span className="hp-go"><Ico size={14} sw={2.4}><polyline points="9 18 15 12 9 6" /></Ico></span>
+                      </motion.button>
+
+                      <div className="hp-div" />
+                      <motion.button variants={hpItem} type="button" role="menuitem" className="hp-item is-danger" onClick={handleOpenLogoutModal}>
+                        <span className="hp-ic"><Ico size={16}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></Ico></span>
                         Log Out
-                      </button>
+                      </motion.button>
+                    </motion.div>
+
+                    <div className="hp-foot">
+                      <a href="/terms" target="_blank" rel="noopener noreferrer">Terms</a>
+                      <a href="/policy" target="_blank" rel="noopener noreferrer">Privacy</a>
                     </div>
                   </motion.div>
                 )}
@@ -833,6 +1037,33 @@ function Header({ toggleSidebar }) {
             </div>
           </div>
         </header>
+
+        {/* SUBSCRIPTION ALERT: shown whenever the plan is not active (owner / admin accounts only) */}
+        <AnimatePresence initial={false}>
+          {showBanner && (
+            <motion.div
+              key="sub-alert"
+              role="alert"
+              className={`hdr-alert${chatOpenMobile ? " hdr-alert--chat" : ""}`}
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.3, ease }}
+            >
+              <div className="hdr-alert-in">
+                <span className="hdr-alert-ico"><Ico size={17} sw={2.2}>{KIND_PATH.warning}</Ico></span>
+                <span className="hdr-alert-text">
+                  <strong>Your subscription is not active.</strong>
+                  Activate a plan to keep using campaigns, bots and live chat.
+                </span>
+                <button type="button" className="hdr-alert-cta" onClick={() => navigate("/dashboard/subscription")}>Choose a plan</button>
+                <button type="button" className="hdr-alert-x" onClick={dismissBanner} aria-label="Dismiss alert">
+                  <Ico size={15} sw={2.4}><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></Ico>
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* CROP MODAL */}
         <AnimatePresence>
@@ -983,72 +1214,94 @@ function Header({ toggleSidebar }) {
 const css = `
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
 
-.hdr,.hn-panel,.hp-panel,.hdr-overlay{
-  --ink:#0e1530; --muted:#5b6785; --soft:#8793b2; --line:#e3e8f6; --surface:#fff;
+.hdr,.hdr-alert,.hn-panel,.hp-panel,.hdr-overlay{
+  --ink:#0e1530; --muted:#55627f; --soft:#8793b2; --line:#e4e9f6; --surface:#fff;
   --brand2:color-mix(in srgb,var(--brand) 55%,#14b8e6);
   --brand-soft:color-mix(in srgb,var(--brand) 9%,#fff);
+  --hdr-h:72px;
   font-family:'Plus Jakarta Sans','Inter',system-ui,-apple-system,sans-serif; box-sizing:border-box; color:var(--ink);
 }
-.hdr *,.hn-panel *,.hp-panel *,.hdr-overlay *{box-sizing:border-box}
-.hdr button{font-family:inherit}
+.hdr *,.hdr-alert *,.hn-panel *,.hp-panel *,.hdr-overlay *{box-sizing:border-box}
+.hdr button,.hdr-alert button,.hp-panel button,.hn-panel button{font-family:inherit;-webkit-tap-highlight-color:transparent}
 
 /* ---------- Header bar ---------- */
-.hdr{position:sticky;top:0;z-index:90;height:72px;padding:0 28px;display:flex;align-items:center;justify-content:space-between;gap:16px;
-  background:rgba(255,255,255,.82);backdrop-filter:blur(16px) saturate(1.4);-webkit-backdrop-filter:blur(16px) saturate(1.4);
-  border-bottom:1px solid var(--line);box-shadow:0 8px 24px -20px rgba(40,50,120,.35)}
+.hdr{position:sticky;top:0;z-index:90;height:var(--hdr-h);padding:0 28px;display:flex;align-items:center;justify-content:space-between;gap:16px;
+  background:rgba(255,255,255,.80);backdrop-filter:blur(18px) saturate(1.6);-webkit-backdrop-filter:blur(18px) saturate(1.6);
+  border-bottom:1px solid var(--line);box-shadow:0 10px 30px -24px rgba(40,50,120,.45)}
+.hdr::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:1px;pointer-events:none;
+  background:linear-gradient(90deg,transparent,color-mix(in srgb,var(--brand) 55%,transparent),transparent);background-size:200% 100%;animation:hdrLine 7s linear infinite;opacity:.7}
 .hdr-left{display:flex;align-items:center;gap:12px;min-width:0}
-.hdr-bar{width:4px;height:22px;border-radius:4px;flex-shrink:0;background:linear-gradient(180deg,var(--brand),var(--brand2))}
-.hdr-title{margin:0;font-size:18px;font-weight:700;letter-spacing:-.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.hdr-burger{display:none;width:40px;height:40px;border-radius:12px;border:1px solid var(--line);background:#fff;color:var(--ink);cursor:pointer;place-items:center;flex-shrink:0;transition:background .2s}
+.hdr-bar{width:4px;height:30px;border-radius:4px;flex-shrink:0;background:linear-gradient(180deg,var(--brand),var(--brand2));box-shadow:0 6px 14px -6px var(--brand)}
+.hdr-titles{display:flex;flex-direction:column;gap:2px;min-width:0}
+.hdr-eyebrow{display:flex;align-items:center;gap:6px;font-size:10.5px;font-weight:700;letter-spacing:.9px;text-transform:uppercase;color:var(--soft)}
+.hdr-eyebrow::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--brand);box-shadow:0 0 0 3px color-mix(in srgb,var(--brand) 18%,transparent)}
+.hdr-title{margin:0;font-size:19px;line-height:1.15;font-weight:800;letter-spacing:-.4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hdr-burger{display:none;width:42px;height:42px;border-radius:13px;border:1px solid var(--line);background:#fff;color:var(--ink);cursor:pointer;place-items:center;flex-shrink:0;transition:background .2s,transform .2s,box-shadow .2s}
 .hdr-burger:hover{background:#f4f6fc}
+.hdr-burger:active{transform:scale(.94)}
 .hdr-right{display:flex;align-items:center;gap:12px;flex-shrink:0}
-.hdr-sep{width:1px;height:26px;background:var(--line)}
+.hdr-sep{width:1px;height:28px;background:var(--line)}
 .hdr-pop{position:relative}
 
 /* Go Pro */
-.hdr-pro{position:relative;overflow:hidden;display:inline-flex;align-items:center;gap:7px;padding:10px 16px;border:0;border-radius:999px;cursor:pointer;color:#fff;
-  font-size:12.5px;font-weight:700;background:linear-gradient(120deg,var(--brand),var(--brand2) 60%,#b832d6);background-size:160% 100%;
-  box-shadow:0 10px 20px -10px var(--brand);transition:background-position .5s,box-shadow .3s}
+.hdr-pro{position:relative;overflow:hidden;display:inline-flex;align-items:center;gap:7px;padding:10px 17px;border:0;border-radius:999px;cursor:pointer;color:#fff;
+  font-size:12.5px;font-weight:700;letter-spacing:.1px;background:linear-gradient(120deg,var(--brand),var(--brand2) 60%,#b832d6);background-size:160% 100%;
+  box-shadow:0 12px 22px -12px var(--brand);transition:background-position .5s,box-shadow .3s}
+.hdr-pro svg{animation:hdrSpark 2.8s ease-in-out infinite}
 .hdr-pro::after{content:"";position:absolute;top:0;left:-60%;width:40%;height:100%;background:linear-gradient(100deg,transparent,rgba(255,255,255,.5),transparent);transform:skewX(-20deg);animation:hdrShine 3.2s ease-in-out infinite}
-.hdr-pro:hover{background-position:100% 0;box-shadow:0 14px 24px -10px var(--brand)}
+.hdr-pro:hover{background-position:100% 0;box-shadow:0 16px 26px -12px var(--brand)}
+.hdr-pro-dot{position:absolute;top:5px;right:7px;width:7px;height:7px;border-radius:50%;background:#fde047;box-shadow:0 0 0 0 rgba(253,224,71,.7);animation:hdrPulse 1.8s ease-out infinite}
 
 /* Bell */
-.hdr-icon{position:relative;width:42px;height:42px;display:grid;place-items:center;border-radius:13px;border:1px solid var(--line);background:#fff;color:var(--muted);cursor:pointer;
-  transition:background .2s,border-color .2s,color .2s,box-shadow .2s}
-.hdr-icon:hover{background:#f7f8fe;border-color:#d3daf0;color:var(--ink)}
-.hdr-icon.is-open{background:var(--brand-soft);border-color:color-mix(in srgb,var(--brand) 35%,var(--line));color:var(--brand);box-shadow:0 8px 18px -12px var(--brand)}
+.hdr-icon{position:relative;width:44px;height:44px;display:grid;place-items:center;border-radius:14px;border:1px solid var(--line);background:#fff;color:var(--muted);cursor:pointer;
+  transition:background .2s,border-color .2s,color .2s,box-shadow .2s,transform .2s}
+.hdr-icon:hover{background:#f7f8fe;border-color:#d3daf0;color:var(--ink);transform:translateY(-1px)}
+.hdr-icon.is-open{background:var(--brand-soft);border-color:color-mix(in srgb,var(--brand) 35%,var(--line));color:var(--brand);box-shadow:0 10px 20px -14px var(--brand)}
 .hdr-bell{display:grid;transform-origin:50% 8%}
 .hdr-bell.has-unread{color:var(--brand)}
 .hdr-bell.is-ringing{animation:hdrRing 1.2s ease-in-out}
-.hdr-badge{position:absolute;top:-5px;right:-5px;min-width:19px;height:19px;padding:0 5px;border-radius:999px;display:grid;place-items:center;
-  background:linear-gradient(135deg,#f43f5e,#e11d48);color:#fff;font-size:10.5px;font-weight:800;border:2px solid #fff;font-variant-numeric:tabular-nums}
+.hdr-badge{position:absolute;top:-6px;right:-6px;min-width:20px;height:20px;padding:0 5px;border-radius:999px;display:grid;place-items:center;
+  background:linear-gradient(135deg,#f43f5e,#e11d48);color:#fff;font-size:10.5px;font-weight:800;border:2px solid #fff;font-variant-numeric:tabular-nums;box-shadow:0 6px 12px -6px #e11d48}
 .hdr-badge>span:last-child{position:relative}
 .hdr-ping{position:absolute;inset:-2px;border-radius:999px;background:#f43f5e;opacity:.55;animation:hdrPing 1.1s ease-out 2}
 
 /* Profile trigger */
-.hdr-profile{display:flex;align-items:center;gap:10px;padding:5px 12px 5px 5px;border-radius:14px;border:1px solid var(--line);background:#fff;cursor:pointer;text-align:left;
-  transition:background .2s,border-color .2s,box-shadow .2s}
-.hdr-profile:hover{background:#f7f8fe;border-color:#d3daf0}
-.hdr-profile.is-open{border-color:color-mix(in srgb,var(--brand) 35%,var(--line));box-shadow:0 8px 18px -12px var(--brand)}
-.hdr-avatar{position:relative;display:block;width:36px;height:36px;flex-shrink:0}
-.hdr-avatar-fallback{display:grid;place-items:center;border-radius:12px;color:#fff;font-weight:800;font-size:13px;letter-spacing:.2px;
+.hdr-profile{display:flex;align-items:center;gap:10px;padding:5px 12px 5px 5px;border-radius:16px;border:1px solid var(--line);background:#fff;cursor:pointer;text-align:left;
+  transition:background .2s,border-color .2s,box-shadow .2s,transform .2s}
+.hdr-profile:hover{background:#f7f8fe;border-color:#d3daf0;transform:translateY(-1px)}
+.hdr-profile.is-open{border-color:color-mix(in srgb,var(--brand) 35%,var(--line));box-shadow:0 10px 20px -14px var(--brand)}
+.hdr-avatar{position:relative;display:block;width:40px;height:40px;flex-shrink:0;border-radius:13px;padding:2px;background:linear-gradient(135deg,var(--brand),var(--brand2))}
+.hdr-avatar>*{border-radius:11px !important;border:2px solid #fff}
+.hdr-avatar-fallback{display:grid;place-items:center;border-radius:11px;color:#fff;font-weight:800;font-size:13px;letter-spacing:.2px;
   background:linear-gradient(135deg,var(--brand),var(--brand2))}
-.hdr-online{position:absolute;right:-2px;bottom:-2px;width:11px;height:11px;border-radius:50%;background:#22c55e;border:2px solid #fff}
+.hdr-online{position:absolute;right:-3px;bottom:-3px;width:12px;height:12px;border-radius:50%;background:#22c55e;border:2px solid #fff}
 .hdr-pinfo{display:flex;flex-direction:column;gap:1px;min-width:0}
 .hdr-pname{font-size:13px;font-weight:700;line-height:1.2;max-width:140px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .hdr-prole{font-size:11px;font-weight:500;color:var(--soft)}
 .hdr-chev{display:grid;color:var(--soft)}
 .hdr-skel{background:linear-gradient(90deg,#e9edf8 0%,#f6f8fd 50%,#e9edf8 100%);background-size:200% 100%;animation:hdrSkel 1.2s linear infinite}
 
-.hdr button:focus-visible,.hn-panel button:focus-visible,.hp-panel button:focus-visible,.hdr-overlay button:focus-visible,.hdr-overlay input:focus-visible{
+.hdr button:focus-visible,.hdr-alert button:focus-visible,.hn-panel button:focus-visible,.hp-panel button:focus-visible,.hdr-overlay button:focus-visible,.hdr-overlay input:focus-visible{
   outline:3px solid color-mix(in srgb,var(--brand) 40%,transparent);outline-offset:2px}
+
+/* ---------- Subscription alert ---------- */
+.hdr-alert{position:sticky;top:var(--hdr-h);z-index:89;overflow:hidden;background:linear-gradient(90deg,#fff7ed,#fff1f2);border-bottom:1px solid #fed7aa}
+.hdr-alert-in{display:flex;align-items:center;gap:12px;padding:10px 28px}
+.hdr-alert-ico{width:34px;height:34px;flex-shrink:0;display:grid;place-items:center;border-radius:11px;color:#c2410c;background:#ffedd5;animation:hdrPulseSoft 2.2s ease-in-out infinite}
+.hdr-alert-text{flex:1;min-width:0;font-size:13px;line-height:1.45;color:#7c2d12}
+.hdr-alert-text strong{font-weight:800;margin-right:4px}
+.hdr-alert-cta{flex-shrink:0;padding:8px 15px;border:0;border-radius:11px;cursor:pointer;color:#fff;font-size:12.5px;font-weight:700;white-space:nowrap;
+  background:linear-gradient(120deg,#ea580c,#e11d48);box-shadow:0 10px 18px -10px #e11d48;transition:transform .2s,box-shadow .3s}
+.hdr-alert-cta:hover{transform:translateY(-1px);box-shadow:0 14px 22px -10px #e11d48}
+.hdr-alert-x{flex-shrink:0;width:30px;height:30px;display:grid;place-items:center;border:0;border-radius:9px;background:transparent;color:#9a3412;cursor:pointer;transition:background .2s}
+.hdr-alert-x:hover{background:rgba(154,52,18,.1)}
 
 /* ---------- Notification panel ---------- */
 .hn-panel{position:absolute;right:0;top:calc(100% + 12px);width:408px;max-width:calc(100vw - 24px);z-index:100;transform-origin:top right;
-  background:#fff;border:1px solid var(--line);border-radius:20px;overflow:hidden;
-  box-shadow:0 30px 60px -20px rgba(30,40,110,.35),0 8px 20px -12px rgba(30,40,110,.2)}
-.hn-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 18px 10px}
-.hn-title{margin:0;font-size:16px;font-weight:800;letter-spacing:-.3px}
+  background:#fff;border:1px solid var(--line);border-radius:22px;overflow:hidden;
+  box-shadow:0 34px 64px -22px rgba(30,40,110,.4),0 10px 24px -14px rgba(30,40,110,.25)}
+.hn-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:18px 18px 10px}
+.hn-title{margin:0;font-size:17px;font-weight:800;letter-spacing:-.3px}
 .hn-sub{display:block;margin-top:2px;font-size:12px;font-weight:500;color:var(--soft)}
 .hn-markall{display:inline-flex;align-items:center;gap:6px;padding:7px 11px;border-radius:10px;border:0;background:var(--brand-soft);color:var(--brand);font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;transition:background .2s}
 .hn-markall:hover{background:color-mix(in srgb,var(--brand) 15%,#fff)}
@@ -1083,33 +1336,58 @@ const css = `
 .hn-empty span:last-child{font-size:12.5px;line-height:1.5;color:var(--soft);max-width:30ch}
 
 /* ---------- Profile menu ---------- */
-.hp-panel{position:absolute;right:0;top:calc(100% + 12px);width:250px;z-index:100;transform-origin:top right;background:#fff;border:1px solid var(--line);border-radius:18px;overflow:hidden;
-  box-shadow:0 30px 60px -20px rgba(30,40,110,.35),0 8px 20px -12px rgba(30,40,110,.2)}
-.hp-banner{display:flex;align-items:center;gap:12px;padding:16px;color:#fff;background:linear-gradient(135deg,var(--brand),var(--brand2))}
-.hp-avatar{position:relative;flex-shrink:0;border-radius:14px;box-shadow:0 0 0 2px rgba(255,255,255,.55)}
-.hp-camera{position:absolute;right:-6px;bottom:-6px;width:22px;height:22px;display:grid;place-items:center;border-radius:50%;border:2px solid #fff;background:var(--ink);color:#fff;cursor:pointer;padding:0;transition:transform .2s}
-.hp-camera:hover{transform:scale(1.12)}
-.hp-who{display:flex;flex-direction:column;gap:3px;min-width:0}
-.hp-name{font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.hp-role{align-self:flex-start;padding:2px 9px;border-radius:999px;background:rgba(255,255,255,.22);font-size:11px;font-weight:600}
-.hp-items{padding:6px}
-.hp-item{width:100%;display:flex;align-items:center;gap:11px;padding:10px 12px;border:0;border-radius:11px;background:none;color:#2a3558;font-size:13px;font-weight:600;cursor:pointer;text-align:left;transition:background .15s}
+.hp-panel{position:absolute;right:0;top:calc(100% + 12px);width:288px;z-index:100;transform-origin:top right;background:#fff;border:1px solid var(--line);border-radius:22px;overflow:hidden;
+  box-shadow:0 34px 64px -22px rgba(30,40,110,.4),0 10px 24px -14px rgba(30,40,110,.25)}
+.hp-panel{max-height:calc(100vh - var(--hdr-h) - 24px);max-height:calc(100dvh - var(--hdr-h) - 24px);overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}
+.hp-banner{position:relative;overflow:hidden;display:flex;align-items:center;gap:13px;padding:18px 16px;color:#fff;background:linear-gradient(135deg,var(--brand),var(--brand2))}
+.hp-banner::before,.hp-banner::after{content:"";position:absolute;border-radius:50%;background:rgba(255,255,255,.14);pointer-events:none}
+.hp-banner::before{width:120px;height:120px;right:-34px;top:-52px}
+.hp-banner::after{width:70px;height:70px;right:40px;bottom:-40px;background:rgba(255,255,255,.1)}
+.hp-avatar{position:relative;z-index:1;flex-shrink:0;border-radius:15px;box-shadow:0 0 0 2px rgba(255,255,255,.6)}
+.hp-camera{position:absolute;right:-6px;bottom:-6px;width:23px;height:23px;display:grid;place-items:center;border-radius:50%;border:2px solid #fff;background:var(--ink);color:#fff;cursor:pointer;padding:0;transition:transform .2s}
+.hp-camera:hover{transform:scale(1.14)}
+.hp-who{position:relative;z-index:1;display:flex;flex-direction:column;gap:3px;min-width:0}
+.hp-name{font-size:14.5px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hp-email{font-size:11.5px;font-weight:500;opacity:.88;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hp-role{align-self:flex-start;margin-top:2px;padding:2px 9px;border-radius:999px;background:rgba(255,255,255,.22);font-size:11px;font-weight:700}
+.hp-plan{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:10px 10px 0;padding:10px 12px;border-radius:14px;border:1px solid var(--line);background:#f8faff}
+.hp-plan-l{display:flex;align-items:center;gap:9px;min-width:0;font-size:12px;font-weight:600;color:var(--muted)}
+.hp-plan-l b{display:block;font-size:13px;font-weight:800;color:var(--ink)}
+.hp-plan-dot{width:9px;height:9px;flex-shrink:0;border-radius:50%}
+.hp-plan-dot.on{background:#22c55e;box-shadow:0 0 0 4px rgba(34,197,94,.18)}
+.hp-plan-dot.off{background:#f59e0b;box-shadow:0 0 0 4px rgba(245,158,11,.2);animation:hdrPulseSoft 2s ease-in-out infinite}
+.hp-plan-btn{flex-shrink:0;padding:7px 12px;border:0;border-radius:10px;cursor:pointer;color:#fff;font-size:11.5px;font-weight:700;background:linear-gradient(120deg,var(--brand),var(--brand2));transition:transform .2s}
+.hp-plan-btn:hover{transform:translateY(-1px)}
+.hp-items{padding:8px}
+.hp-label{padding:8px 10px 4px;font-size:10.5px;font-weight:800;letter-spacing:.9px;text-transform:uppercase;color:var(--soft)}
+.hp-item{position:relative;width:100%;display:flex;align-items:center;gap:12px;padding:9px 10px;border:0;border-radius:13px;background:none;color:#26325a;font-size:13px;font-weight:600;cursor:pointer;text-align:left;transition:background .15s,transform .15s}
 .hp-item:hover{background:#f3f5fc}
+.hp-item:active{transform:scale(.985)}
+.hp-ic{width:32px;height:32px;flex-shrink:0;display:grid;place-items:center;border-radius:10px;color:var(--brand);background:var(--brand-soft);transition:transform .2s}
+.hp-item:hover .hp-ic{transform:scale(1.08) rotate(-4deg)}
+.hp-item .hp-go{margin-left:auto;color:var(--soft);opacity:0;transform:translateX(-4px);transition:opacity .2s,transform .2s}
+.hp-item:hover .hp-go{opacity:1;transform:translateX(0)}
+.hp-item.is-current{background:var(--brand-soft);color:var(--brand)}
+.hp-item.is-current .hp-ic{background:#fff}
 .hp-item.is-danger{color:#e11d48}
+.hp-item.is-danger .hp-ic{color:#e11d48;background:#fff1f2}
 .hp-item.is-danger:hover{background:#fff1f2}
-.hp-div{height:1px;margin:4px 6px;background:var(--line)}
+.hp-div{height:1px;margin:6px 8px;background:var(--line)}
+.hp-foot{display:flex;justify-content:center;gap:14px;padding:6px 10px 12px;font-size:11px;font-weight:600;color:var(--soft)}
+.hp-foot a{color:inherit;text-decoration:none;transition:color .2s}
+.hp-foot a:hover{color:var(--brand)}
 
 /* ---------- Modals ---------- */
 .hdr-overlay{position:fixed;inset:0;z-index:999999;display:flex;align-items:center;justify-content:center;padding:20px;overflow-y:auto;
   background:rgba(14,21,48,.55);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
-.hdr-modal{width:460px;max-width:100%;max-height:92vh;overflow-y:auto;padding:22px;border-radius:24px;background:#fff;border:1px solid var(--line);
+.hdr-modal{width:460px;max-width:100%;max-height:92vh;overflow-y:auto;padding:22px;border-radius:26px;background:#fff;border:1px solid var(--line);
   box-shadow:0 40px 80px -24px rgba(14,21,48,.55)}
 .hdr-modal-sm{width:400px;text-align:center;display:flex;flex-direction:column;align-items:center;padding:28px 24px 24px}
 .hm-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-bottom:16px;margin-bottom:16px;border-bottom:1px solid var(--line)}
 .hm-title{display:flex;align-items:center;gap:12px;margin:0;font-size:16px;font-weight:800;letter-spacing:-.2px}
 .hm-badge{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;color:var(--brand);background:var(--brand-soft)}
-.hm-close{width:34px;height:34px;display:grid;place-items:center;border-radius:10px;border:0;background:#f3f5fc;color:var(--muted);cursor:pointer;transition:background .2s,color .2s}
-.hm-close:hover{background:#e8ecf8;color:var(--ink)}
+.hm-close{width:34px;height:34px;display:grid;place-items:center;border-radius:10px;border:0;background:#f3f5fc;color:var(--muted);cursor:pointer;transition:background .2s,color .2s,transform .2s}
+.hm-close:hover{background:#e8ecf8;color:var(--ink);transform:rotate(90deg)}
 .hm-sources{display:flex;gap:10px;margin-bottom:12px}
 .hm-source{flex:1;display:flex;align-items:center;justify-content:center;gap:8px;padding:11px 12px;border-radius:12px;border:1px dashed #b9c3e6;background:#f7f8ff;color:#3a4a8f;font-size:12.5px;font-weight:700;cursor:pointer;transition:all .2s}
 .hm-source:hover,.hm-source.is-on{border-color:var(--brand);background:var(--brand-soft);color:var(--brand)}
@@ -1146,29 +1424,45 @@ const css = `
 @keyframes hdrBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
 @keyframes hdrSkel{to{background-position:-200% 0}}
 @keyframes hdrSpin{to{transform:rotate(360deg)}}
+@keyframes hdrLine{to{background-position:-200% 0}}
+@keyframes hdrSpark{0%,100%{transform:rotate(0) scale(1)}50%{transform:rotate(18deg) scale(1.18)}}
+@keyframes hdrPulse{0%{box-shadow:0 0 0 0 rgba(253,224,71,.7)}100%{box-shadow:0 0 0 8px rgba(253,224,71,0)}}
+@keyframes hdrPulseSoft{0%,100%{transform:scale(1)}50%{transform:scale(1.07)}}
 
 /* ---------- Responsive ---------- */
 @media (max-width:768px){
-  .hdr{height:60px;padding:0 12px;gap:10px}
+  .hdr,.hdr-alert,.hn-panel,.hp-panel{--hdr-h:60px}
+  .hdr{padding:0 12px;gap:10px}
   .hdr-burger{display:grid}
-  .hdr-bar{display:none}
-  .hdr-title{font-size:15.5px;max-width:48vw}
+  .hdr-bar,.hdr-eyebrow{display:none}
+  .hdr-title{font-size:16px;max-width:46vw}
   .hdr-right{gap:8px}
   .hdr-sep,.hdr-pinfo,.hdr-chev{display:none}
-  .hdr-profile{padding:3px;border-radius:13px}
-  .hdr-pro{padding:10px}
+  .hdr-icon{width:42px;height:42px}
+  .hdr-profile{padding:3px;border-radius:15px}
+  .hdr-pro{padding:11px}
   .hdr-pro-text{display:none}
+  .hdr-pro-dot{top:6px;right:6px}
   .hdr-pop{position:static}
-  .hn-panel,.hp-panel{top:calc(100% + 8px);left:12px;right:12px;width:auto;max-width:none}
-  .hp-panel{left:auto;width:250px}
+  .hn-panel,.hp-panel{top:calc(100% + 8px);left:10px;right:10px;width:auto;max-width:none;border-radius:20px}
+  .hp-panel{left:auto;width:min(300px,calc(100vw - 20px))}
   .hn-list{max-height:min(420px,58vh)}
-  .hdr-modal{padding:18px;border-radius:20px}
+  .hdr-alert-in{padding:10px 12px;gap:10px;flex-wrap:wrap}
+  .hdr-alert-text{flex:1 1 100%;order:1;font-size:12.5px}
+  .hdr-alert-ico{order:0}
+  .hdr-alert-cta{order:2;flex:1}
+  .hdr-alert-x{order:0;margin-left:auto}
+  .hdr-modal{padding:18px;border-radius:22px}
   .hm-foot{flex-direction:column-reverse;align-items:stretch}
   .hm-foot-right{width:100%}
   .hm-foot-right .hm-btn{flex:1}
+
+  /* mobile only: while a conversation is open the header (and alert) step aside so the chat gets the whole screen */
+  .hdr.hdr--chat,.hdr-alert.hdr-alert--chat{display:none}
+  body.pm-chat-open .chats-root.chat-main-container{height:100vh !important;height:100dvh !important}
 }
 @media (prefers-reduced-motion:reduce){
-  .hdr *,.hdr *::after,.hn-panel *,.hp-panel *,.hdr-overlay *{animation:none !important}
+  .hdr *,.hdr *::after,.hdr::after,.hdr-alert *,.hn-panel *,.hp-panel *,.hdr-overlay *{animation:none !important}
 }
 `;
 
