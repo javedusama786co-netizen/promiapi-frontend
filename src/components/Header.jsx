@@ -237,6 +237,59 @@ const SETTINGS_LINKS = [
   { to: "/dashboard/subscription", label: "Subscription & Billing", icon: <><rect x="1" y="4" width="22" height="16" rx="2" ry="2" /><line x1="1" y1="10" x2="23" y2="10" /></> },
 ];
 
+// ---------- Help & Support content ----------
+// Change these once: they drive the Help & Support window.
+const SUPPORT = {
+  email: "support@promiapi.com", // confirm this mailbox exists
+  whatsapp: "", // support WhatsApp number with country code, digits only (e.g. "923001234567"). Empty = button hidden
+  replyTime: "within 24 hours", // shown as "Typical reply: ..." (empty = hidden)
+};
+
+const SUPPORT_CATEGORIES = [
+  { id: "technical", label: "Technical problem" },
+  { id: "whatsapp", label: "WhatsApp connection" },
+  { id: "campaigns", label: "Campaigns & messages" },
+  { id: "billing", label: "Billing & subscription" },
+  { id: "feature", label: "Feature request" },
+  { id: "other", label: "Something else" },
+];
+
+const FAQS = [
+  {
+    q: "How do I connect my WhatsApp number?",
+    a: "Open Settings → Social Channels Setup and follow the steps to connect your WhatsApp Business account through the official WhatsApp Cloud API. You will need a Meta Business account and a phone number that is not already registered on a personal WhatsApp account.",
+    action: { label: "Open Social Channels Setup", to: "/dashboard/settings/whatsapp", adminOnly: true },
+  },
+  {
+    q: "Why was my message or campaign not delivered?",
+    a: "Common reasons: the person has not opted in, the number is not on WhatsApp, the 24-hour customer service window has closed (then only an approved template can be sent), your template is not approved yet, or your Meta account has a payment or messaging-limit issue. Check the Message Log for the exact failure reason of each message.",
+  },
+  {
+    q: "My template is pending or was rejected. What now?",
+    a: "Meta reviews every template, usually within minutes to a few hours. Rejections are mostly caused by the wrong category, unclear variables, promotional content marked as utility, or misleading text. Edit the template, correct the issue and submit it again.",
+  },
+  {
+    q: "How do I turn on AI replies?",
+    a: "Go to Settings → AI Bot & Settings, add your AI key, switch the AI on and write your business instructions. You can also set operating hours, a reply delay and handover words (like “agent”) that pass the chat to a human.",
+    action: { label: "Open AI Bot & Settings", to: "/dashboard/settings/ai-chatbot", adminOnly: true },
+  },
+  {
+    q: "How do I add team members?",
+    a: "Open Team Members, add the person’s email and role. Agents can reply to chats and manage contacts, but they cannot change settings or billing.",
+    action: { label: "Open Team Members", to: "/dashboard/team", adminOnly: true },
+  },
+  {
+    q: "How do I change or cancel my subscription?",
+    a: "Open My Subscription to see your plan, renewal date and available upgrades. If your plan is not active, campaigns and other paid features stay locked until you renew.",
+    action: { label: "Open My Subscription", to: "/dashboard/subscription", adminOnly: true },
+  },
+  {
+    q: "How is my data handled and how can I delete it?",
+    a: "We only use your data to run the service and never sell it. You can delete contacts and chats from the dashboard, or ask us to delete your whole account. The Privacy Policy explains how, and how long it takes.",
+    action: { label: "Read data deletion steps", href: "/policy#data-deletion" },
+  },
+];
+
 const hpList = { hidden: {}, show: { transition: { staggerChildren: 0.035, delayChildren: 0.04 } } };
 const hpItem = { hidden: { opacity: 0, x: -8 }, show: { opacity: 1, x: 0, transition: { duration: 0.2, ease } } };
 
@@ -255,6 +308,20 @@ function Header({ toggleSidebar }) {
   const [user, setUser] = useState({ name: "User", role: "Client", avatar: "" });
   const [isSubscribed, setIsSubscribed] = useState(null); // null = not known yet (no alert until we know)
   const [userEmail, setUserEmail] = useState("");
+
+  // Help & Support window
+  const [showSupport, setShowSupport] = useState(false);
+  const [supportTab, setSupportTab] = useState("help"); // help | contact | tickets
+  const [faqQuery, setFaqQuery] = useState("");
+  const [openFaq, setOpenFaq] = useState(-1);
+  const [supportForm, setSupportForm] = useState({ category: "technical", subject: "", message: "" });
+  const [supportSending, setSupportSending] = useState(false);
+  const [supportError, setSupportError] = useState("");
+  const [supportOffline, setSupportOffline] = useState(false);
+  const [supportResult, setSupportResult] = useState(null);
+  const [tickets, setTickets] = useState([]);
+  const [ticketsLoading, setTicketsLoading] = useState(false);
+  const [copiedEmail, setCopiedEmail] = useState(false);
   const [chatOpenMobile, setChatOpenMobile] = useState(false);
   const [bannerDismissed, setBannerDismissed] = useState(() => {
     try { return sessionStorage.getItem("hdr_sub_alert_dismissed") === "1"; } catch (e) { return false; }
@@ -619,6 +686,7 @@ function Header({ toggleSidebar }) {
         setShowProfileMenu(false);
         setShowCropModal(false);
         setShowLogoutModal(false);
+        setShowSupport(false);
       }
     };
     document.addEventListener("keydown", onKey);
@@ -671,6 +739,96 @@ function Header({ toggleSidebar }) {
     try { sessionStorage.setItem("hdr_sub_alert_dismissed", "1"); } catch (e) { /* ignore */ }
   };
   // a fresh "inactive" result after the user had dismissed it earlier is still dismissed for this session only
+  // ----- Help & Support -----
+  const openSupport = (tab = "help") => {
+    setShowProfileMenu(false);
+    setShowNotifications(false);
+    setSupportTab(tab);
+    setSupportError("");
+    setSupportOffline(false);
+    setSupportResult(null);
+    setShowSupport(true);
+  };
+
+  const loadTickets = async () => {
+    const token = localStorage.getItem("token");
+    if (!token) return;
+    setTicketsLoading(true);
+    try {
+      const res = await axios.get(`${API_BASE_URL}/api/support/tickets`, { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 });
+      if (res.data?.success) setTickets(res.data.tickets || []);
+    } catch (e) {
+      setTickets([]);
+    } finally {
+      setTicketsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (showSupport && supportTab === "tickets") loadTickets();
+  }, [showSupport, supportTab]);
+
+  const supportMailto = () => {
+    const f = supportForm;
+    const body = `${f.message || ""}\n\n---\nAccount: ${user.name} <${userEmail}>\nRole: ${user.role}\nPage: ${window.location.href}`;
+    return `mailto:${SUPPORT.email}?subject=${encodeURIComponent(f.subject || "Support request")}&body=${encodeURIComponent(body)}`;
+  };
+
+  const copySupportEmail = async () => {
+    try {
+      await navigator.clipboard.writeText(SUPPORT.email);
+      setCopiedEmail(true);
+      setTimeout(() => setCopiedEmail(false), 1800);
+    } catch (e) {
+      window.prompt("Copy our support email:", SUPPORT.email);
+    }
+  };
+
+  const submitTicket = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    const subject = supportForm.subject.trim();
+    const message = supportForm.message.trim();
+    setSupportOffline(false);
+    if (subject.length < 4) { setSupportError("Please add a short subject (at least 4 characters)."); return; }
+    if (message.length < 15) { setSupportError("Please describe the problem in a few more words (at least 15 characters)."); return; }
+    setSupportError("");
+    setSupportSending(true);
+    try {
+      const token = localStorage.getItem("token");
+      const res = await axios.post(
+        `${API_BASE_URL}/api/support/tickets`,
+        { category: supportForm.category, subject, message, name: user.name, email: userEmail, pageUrl: window.location.href },
+        { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 }
+      );
+      if (res.data?.success) {
+        setSupportResult(res.data.ticket);
+        setSupportForm((f) => ({ ...f, subject: "", message: "" }));
+      } else {
+        setSupportError(res.data?.message || "We could not send your request. Please try again.");
+      }
+    } catch (err) {
+      const serverMsg = err.response?.data?.message;
+      if (serverMsg) {
+        setSupportError(serverMsg);
+      } else {
+        setSupportError("We could not reach our support desk right now.");
+        setSupportOffline(true); // offer the email route instead
+      }
+    } finally {
+      setSupportSending(false);
+    }
+  };
+
+  const faqList = FAQS.filter((f) => {
+    const q = faqQuery.trim().toLowerCase();
+    return !q || f.q.toLowerCase().includes(q) || f.a.toLowerCase().includes(q);
+  });
+
+  const formatTicketDate = (d) => {
+    try { return new Date(d).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }); } catch (e) { return ""; }
+  };
+  const STATUS_LABEL = { open: "Open", in_progress: "In progress", resolved: "Resolved", closed: "Closed" };
+
   const goTo = (path) => {
     setShowProfileMenu(false);
     setShowNotifications(false);
@@ -1014,7 +1172,7 @@ function Header({ toggleSidebar }) {
 
                       <div className="hp-div" />
                       <div className="hp-label">Support</div>
-                      <motion.button variants={hpItem} type="button" role="menuitem" className="hp-item" onClick={() => { setShowProfileMenu(false); window.location.href = "mailto:support@promiapi.com"; }}>
+                      <motion.button variants={hpItem} type="button" role="menuitem" className="hp-item" onClick={() => openSupport("help")}>
                         <span className="hp-ic"><Ico size={16}><circle cx="12" cy="12" r="10" /><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /><line x1="12" y1="17" x2="12.01" y2="17" /></Ico></span>
                         Help &amp; Support
                         <span className="hp-go"><Ico size={14} sw={2.4}><polyline points="9 18 15 12 9 6" /></Ico></span>
@@ -1201,6 +1359,214 @@ function Header({ toggleSidebar }) {
                 <div className="hl-actions">
                   <button type="button" onClick={() => setShowLogoutModal(false)} className="hm-btn hm-ghost">Cancel</button>
                   <button type="button" onClick={handleConfirmSignOut} className="hm-btn hm-danger">Yes, Log Out</button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* HELP & SUPPORT */}
+        <AnimatePresence>
+          {showSupport && (
+            <motion.div
+              className="hdr-overlay hs-overlay"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowSupport(false)}
+            >
+              <motion.div
+                className="hdr-modal hs-modal"
+                role="dialog"
+                aria-modal="true"
+                aria-label="Help and Support"
+                initial={{ opacity: 0, y: 24, scale: 0.97 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 24, scale: 0.97 }}
+                transition={{ type: "spring", stiffness: 340, damping: 30 }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="hs-head">
+                  <div className="hs-head-text">
+                    <h3>Help &amp; Support</h3>
+                    <p>Hi {String(user.name || "there").split(" ")[0]}, how can we help you today?</p>
+                  </div>
+                  <button type="button" className="hm-close" onClick={() => setShowSupport(false)} aria-label="Close">
+                    <Ico size={16} sw={2.4}><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></Ico>
+                  </button>
+                </div>
+
+                <div className="hs-tabs" role="tablist">
+                  {[["help", "Help Center"], ["contact", "Contact us"], ["tickets", "My tickets"]].map(([id, label]) => (
+                    <button key={id} type="button" role="tab" aria-selected={supportTab === id} className={`hs-tab ${supportTab === id ? "is-active" : ""}`} onClick={() => setSupportTab(id)}>
+                      {supportTab === id && <motion.span layoutId="hs-tab-pill" className="hs-tab-pill" transition={{ type: "spring", stiffness: 520, damping: 38 }} />}
+                      <span>{label}</span>
+                    </button>
+                  ))}
+                </div>
+
+                <div className="hs-body">
+                  <AnimatePresence mode="wait" initial={false}>
+                    {supportTab === "help" && (
+                      <motion.div key="help" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.18 }}>
+                        <div className="hs-channels">
+                          <button type="button" className="hs-channel" onClick={() => setSupportTab("contact")}>
+                            <span className="hs-ch-ic"><Ico size={19}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></Ico></span>
+                            <span className="hs-ch-t"><b>Send a request</b><i>{SUPPORT.replyTime ? `Typical reply: ${SUPPORT.replyTime}` : "Our team will get back to you"}</i></span>
+                          </button>
+                          <div className="hs-channel hs-channel-row">
+                            <a className="hs-ch-main" href={`mailto:${SUPPORT.email}`}>
+                              <span className="hs-ch-ic"><Ico size={19}><path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" /><polyline points="22,6 12,13 2,6" /></Ico></span>
+                              <span className="hs-ch-t"><b>Email us</b><i>{SUPPORT.email}</i></span>
+                            </a>
+                            <button type="button" className="hs-copy" onClick={copySupportEmail}>{copiedEmail ? "Copied" : "Copy"}</button>
+                          </div>
+                          {SUPPORT.whatsapp && (
+                            <a className="hs-channel" href={`https://wa.me/${SUPPORT.whatsapp}?text=${encodeURIComponent(`Hi PromiAPI support, I need help. (${user.name})`)}`} target="_blank" rel="noopener noreferrer">
+                              <span className="hs-ch-ic hs-ch-wa"><Ico size={19}><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" /></Ico></span>
+                              <span className="hs-ch-t"><b>Chat on WhatsApp</b><i>Talk to our team directly</i></span>
+                            </a>
+                          )}
+                        </div>
+
+                        <div className="hs-search">
+                          <Ico size={16}><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></Ico>
+                          <input type="text" value={faqQuery} onChange={(e) => { setFaqQuery(e.target.value); setOpenFaq(-1); }} placeholder="Search help articles…" aria-label="Search help articles" />
+                        </div>
+
+                        <div className="hs-faqs">
+                          {faqList.length === 0 && (
+                            <div className="hs-nofaq">
+                              <b>No article matches “{faqQuery}”.</b>
+                              <span>Send us your question and we will help.</span>
+                              <button type="button" className="hm-btn hm-primary" onClick={() => setSupportTab("contact")}>Contact us</button>
+                            </div>
+                          )}
+                          {faqList.map((f, i) => {
+                            const isOpen = openFaq === i;
+                            const canUse = f.action && (!f.action.adminOnly || !isAgent);
+                            return (
+                              <div key={f.q} className={`hs-faq ${isOpen ? "is-open" : ""}`}>
+                                <button type="button" className="hs-q" aria-expanded={isOpen} onClick={() => setOpenFaq(isOpen ? -1 : i)}>
+                                  <span>{f.q}</span>
+                                  <motion.span className="hs-chev" animate={{ rotate: isOpen ? 180 : 0 }} transition={{ duration: 0.2 }}>
+                                    <Ico size={16} sw={2.4}><polyline points="6 9 12 15 18 9" /></Ico>
+                                  </motion.span>
+                                </button>
+                                <AnimatePresence initial={false}>
+                                  {isOpen && (
+                                    <motion.div className="hs-a-wrap" initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.22, ease }}>
+                                      <div className="hs-a">
+                                        <p>{f.a}</p>
+                                        {canUse && f.action.to && (
+                                          <button type="button" className="hs-act" onClick={() => { setShowSupport(false); goTo(f.action.to); }}>{f.action.label} →</button>
+                                        )}
+                                        {canUse && f.action.href && (
+                                          <a className="hs-act" href={f.action.href} target="_blank" rel="noopener noreferrer">{f.action.label} →</a>
+                                        )}
+                                      </div>
+                                    </motion.div>
+                                  )}
+                                </AnimatePresence>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        <div className="hs-links">
+                          <a href="/terms" target="_blank" rel="noopener noreferrer">Terms of Service</a>
+                          <a href="/policy" target="_blank" rel="noopener noreferrer">Privacy Policy</a>
+                          <a href="https://business.whatsapp.com/policy" target="_blank" rel="noopener noreferrer">WhatsApp Messaging Policy</a>
+                        </div>
+                      </motion.div>
+                    )}
+
+                    {supportTab === "contact" && (
+                      <motion.div key="contact" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.18 }}>
+                        {supportResult ? (
+                          <div className="hs-done">
+                            <motion.span className="hs-done-ic" initial={{ scale: 0.4, rotate: -20 }} animate={{ scale: 1, rotate: 0 }} transition={{ type: "spring", stiffness: 300, damping: 14 }}>
+                              <Ico size={30} sw={2.4}><polyline points="20 6 9 17 4 12" /></Ico>
+                            </motion.span>
+                            <h4>Request received</h4>
+                            <p>Your ticket number is</p>
+                            <div className="hs-ticketno">{supportResult.ticketNo}</div>
+                            <p className="hs-done-note">Please keep it for reference. Our team will reply to <b>{userEmail || "your account email"}</b>{SUPPORT.replyTime ? `, typically ${SUPPORT.replyTime}` : ""}. You can follow the status under “My tickets”.</p>
+                            <div className="hs-done-actions">
+                              <button type="button" className="hm-btn hm-ghost" onClick={() => setSupportResult(null)}>Send another</button>
+                              <button type="button" className="hm-btn hm-primary" onClick={() => setSupportTab("tickets")}>View my tickets</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <form className="hs-form" onSubmit={submitTicket} noValidate>
+                            <div className="hs-field">
+                              <label htmlFor="hs-cat">What do you need help with?</label>
+                              <div className="hs-chips" id="hs-cat">
+                                {SUPPORT_CATEGORIES.map((c) => (
+                                  <button key={c.id} type="button" className={`hs-chip ${supportForm.category === c.id ? "is-on" : ""}`} onClick={() => setSupportForm((f) => ({ ...f, category: c.id }))}>{c.label}</button>
+                                ))}
+                              </div>
+                            </div>
+                            <div className="hs-field">
+                              <label htmlFor="hs-subject">Subject</label>
+                              <input id="hs-subject" className="hm-input" type="text" maxLength={140} value={supportForm.subject} onChange={(e) => setSupportForm((f) => ({ ...f, subject: e.target.value }))} placeholder="e.g. My template is stuck in pending" />
+                            </div>
+                            <div className="hs-field">
+                              <label htmlFor="hs-message">Describe the problem</label>
+                              <textarea id="hs-message" className="hm-input hs-textarea" rows={5} maxLength={4000} value={supportForm.message} onChange={(e) => setSupportForm((f) => ({ ...f, message: e.target.value }))} placeholder="What happened, what did you expect, and any error text you saw…" />
+                              <span className="hs-count">{supportForm.message.length}/4000</span>
+                            </div>
+                            <p className="hs-auto">We automatically include your account ({userEmail || user.name}) and the page you are on, so you do not need to repeat them.</p>
+
+                            <AnimatePresence initial={false}>
+                              {supportError && (
+                                <motion.div className="hs-error" role="alert" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}>
+                                  <span>{supportError}</span>
+                                  {supportOffline && (
+                                    <a className="hs-mail-fallback" href={supportMailto()}>Send by email instead</a>
+                                  )}
+                                </motion.div>
+                              )}
+                            </AnimatePresence>
+
+                            <button type="submit" className="hm-btn hm-primary hs-submit" disabled={supportSending}>
+                              {supportSending ? (<><span className="hm-spinner" /> Sending…</>) : "Send request"}
+                            </button>
+                          </form>
+                        )}
+                      </motion.div>
+                    )}
+
+                    {supportTab === "tickets" && (
+                      <motion.div key="tickets" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.18 }}>
+                        {ticketsLoading && tickets.length === 0 ? (
+                          <div className="hs-tlist">{[0, 1, 2].map((i) => <div key={i} className="hs-tskel hdr-skel" />)}</div>
+                        ) : tickets.length === 0 ? (
+                          <div className="hs-nofaq">
+                            <b>No requests yet</b>
+                            <span>When you contact us, your tickets and our replies will appear here.</span>
+                            <button type="button" className="hm-btn hm-primary" onClick={() => setSupportTab("contact")}>Contact us</button>
+                          </div>
+                        ) : (
+                          <div className="hs-tlist">
+                            {tickets.map((t) => (
+                              <div key={t._id} className="hs-ticket">
+                                <div className="hs-t-top">
+                                  <span className="hs-t-no">{t.ticketNo}</span>
+                                  <span className={`hs-status s-${t.status}`}>{STATUS_LABEL[t.status] || t.status}</span>
+                                </div>
+                                <div className="hs-t-sub">{t.subject}</div>
+                                <div className="hs-t-meta">{formatTicketDate(t.createdAt)}</div>
+                                {t.reply && (
+                                  <div className="hs-t-reply"><b>Reply from support</b><p>{t.reply}</p></div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
               </motion.div>
             </motion.div>
@@ -1417,6 +1783,91 @@ const css = `
 .hl-actions{display:flex;gap:12px;width:100%}
 .hl-actions .hm-btn{flex:1}
 
+/* ---------- Help & Support ---------- */
+.hs-overlay{align-items:center}
+.hs-modal{width:720px;max-width:100%;max-height:min(88vh,820px);max-height:min(88dvh,820px);padding:0;display:flex;flex-direction:column;overflow:hidden}
+.hs-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:22px 24px 16px;background:linear-gradient(135deg,var(--brand-soft),#fff 70%)}
+.hs-head h3{margin:0;font-size:20px;font-weight:800;letter-spacing:-.4px}
+.hs-head p{margin:4px 0 0;font-size:13.5px;color:var(--muted)}
+.hs-tabs{display:flex;gap:4px;padding:0 18px;border-bottom:1px solid var(--line);background:#fff}
+.hs-tab{position:relative;padding:12px 14px;border:0;background:none;cursor:pointer;font-size:13.5px;font-weight:700;color:var(--soft);transition:color .2s;border-radius:10px 10px 0 0}
+.hs-tab span{position:relative;z-index:1}
+.hs-tab.is-active{color:var(--brand)}
+.hs-tab-pill{position:absolute;left:8px;right:8px;bottom:-1px;height:3px;border-radius:3px;background:linear-gradient(90deg,var(--brand),var(--brand2))}
+.hs-body{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:18px 24px 24px;scrollbar-width:thin}
+.hs-channels{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-bottom:16px}
+.hs-channel{display:flex;align-items:center;gap:12px;padding:13px 14px;border:1px solid var(--line);border-radius:16px;background:#fff;cursor:pointer;text-align:left;text-decoration:none;color:inherit;
+  font-family:inherit;transition:border-color .2s,box-shadow .2s,transform .2s}
+.hs-channel:hover{border-color:color-mix(in srgb,var(--brand) 40%,var(--line));box-shadow:0 14px 24px -18px var(--brand);transform:translateY(-2px)}
+.hs-channel-row{padding:0;cursor:default;overflow:hidden}
+.hs-channel-row:hover{transform:translateY(-2px)}
+.hs-ch-main{flex:1;min-width:0;display:flex;align-items:center;gap:12px;padding:13px 0 13px 14px;color:inherit;text-decoration:none}
+.hs-copy{margin-right:10px;padding:6px 11px;border:0;border-radius:9px;background:var(--brand-soft);color:var(--brand);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit}
+.hs-ch-ic{width:40px;height:40px;flex-shrink:0;display:grid;place-items:center;border-radius:13px;color:var(--brand);background:var(--brand-soft)}
+.hs-ch-wa{color:#16a34a;background:#e8f8ee}
+.hs-ch-t{display:flex;flex-direction:column;gap:2px;min-width:0}
+.hs-ch-t b{font-size:13.5px;font-weight:800}
+.hs-ch-t i{font-style:normal;font-size:12px;color:var(--soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hs-search{display:flex;align-items:center;gap:10px;padding:0 14px;margin-bottom:12px;border:1px solid #dbe2f4;border-radius:14px;background:#fff;color:var(--soft);transition:border-color .2s,box-shadow .2s}
+.hs-search:focus-within{border-color:var(--brand);box-shadow:0 0 0 4px color-mix(in srgb,var(--brand) 14%,transparent);color:var(--brand)}
+.hs-search input{flex:1;min-width:0;height:44px;border:0;outline:0;background:transparent;font:500 14px/1 inherit;font-family:inherit;color:var(--ink)}
+.hs-faqs{display:flex;flex-direction:column;gap:8px}
+.hs-faq{border:1px solid var(--line);border-radius:14px;background:#fff;overflow:hidden;transition:border-color .2s,box-shadow .2s}
+.hs-faq.is-open{border-color:color-mix(in srgb,var(--brand) 35%,var(--line));box-shadow:0 14px 26px -22px var(--brand)}
+.hs-q{width:100%;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;border:0;background:none;cursor:pointer;text-align:left;font-size:14px;font-weight:700;color:var(--ink);font-family:inherit}
+.hs-q:hover{color:var(--brand)}
+.hs-chev{display:grid;color:var(--soft);flex-shrink:0}
+.hs-a-wrap{overflow:hidden}
+.hs-a{padding:0 16px 16px}
+.hs-a p{margin:0 0 10px;font-size:13.5px;line-height:1.7;color:var(--muted)}
+.hs-act{display:inline-block;padding:8px 13px;border:0;border-radius:10px;background:var(--brand-soft);color:var(--brand);font-size:12.5px;font-weight:700;cursor:pointer;text-decoration:none;font-family:inherit;transition:background .2s}
+.hs-act:hover{background:color-mix(in srgb,var(--brand) 16%,#fff)}
+.hs-nofaq{display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;padding:30px 16px;border:1px dashed #cfd7ee;border-radius:16px;color:var(--muted);font-size:13.5px}
+.hs-nofaq b{color:var(--ink);font-size:14.5px}
+.hs-nofaq .hm-btn{margin-top:8px}
+.hs-links{display:flex;flex-wrap:wrap;justify-content:center;gap:6px 18px;margin-top:18px;padding-top:14px;border-top:1px solid var(--line)}
+.hs-links a{font-size:12.5px;font-weight:600;color:var(--soft);text-decoration:none;transition:color .2s}
+.hs-links a:hover{color:var(--brand)}
+
+.hs-form{display:flex;flex-direction:column;gap:16px}
+.hs-field{position:relative;display:flex;flex-direction:column;gap:7px}
+.hs-field label{font-size:12.5px;font-weight:700;color:var(--muted)}
+.hs-chips{display:flex;flex-wrap:wrap;gap:8px}
+.hs-chip{padding:8px 13px;border:1px solid var(--line);border-radius:999px;background:#fff;color:var(--muted);font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;transition:all .2s}
+.hs-chip:hover{border-color:color-mix(in srgb,var(--brand) 40%,var(--line));color:var(--ink)}
+.hs-chip.is-on{border-color:var(--brand);background:var(--brand-soft);color:var(--brand);font-weight:700}
+.hs-textarea{resize:vertical;min-height:120px;line-height:1.55}
+.hs-count{position:absolute;right:10px;bottom:8px;font-size:11px;font-weight:600;color:var(--soft);pointer-events:none}
+.hs-auto{margin:-4px 0 0;font-size:12px;line-height:1.55;color:var(--soft)}
+.hs-error{overflow:hidden;padding:11px 14px;border-radius:12px;background:#fff1f2;border:1px solid #fecdd3;color:#be123c;font-size:13px;line-height:1.5;display:flex;flex-direction:column;gap:6px}
+.hs-mail-fallback{align-self:flex-start;font-weight:700;color:#be123c;text-decoration:underline;text-underline-offset:3px}
+.hs-submit{width:100%;height:46px}
+
+.hs-done{display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;padding:14px 6px 4px}
+.hs-done-ic{width:64px;height:64px;display:grid;place-items:center;border-radius:50%;color:#16a34a;background:#e8f8ee;box-shadow:0 0 0 8px #f3fbf6;margin-bottom:8px}
+.hs-done h4{margin:0;font-size:18px;font-weight:800}
+.hs-done p{margin:0;font-size:13.5px;color:var(--muted)}
+.hs-ticketno{margin:4px 0 6px;padding:9px 18px;border-radius:12px;background:var(--brand-soft);color:var(--brand);font-size:20px;font-weight:800;letter-spacing:2px;font-variant-numeric:tabular-nums}
+.hs-done-note{max-width:44ch;line-height:1.6}
+.hs-done-actions{display:flex;gap:10px;margin-top:14px;width:100%}
+.hs-done-actions .hm-btn{flex:1}
+
+.hs-tlist{display:flex;flex-direction:column;gap:10px}
+.hs-tskel{height:78px;border-radius:14px}
+.hs-ticket{padding:14px 16px;border:1px solid var(--line);border-radius:14px;background:#fff}
+.hs-t-top{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.hs-t-no{font-size:12px;font-weight:800;letter-spacing:1px;color:var(--brand)}
+.hs-status{padding:3px 10px;border-radius:999px;font-size:11px;font-weight:800}
+.hs-status.s-open{background:#fff4e5;color:#b45309}
+.hs-status.s-in_progress{background:#e6f0ff;color:#1d4ed8}
+.hs-status.s-resolved{background:#e8f8ee;color:#15803d}
+.hs-status.s-closed{background:#eef1f9;color:#64748b}
+.hs-t-sub{margin-top:6px;font-size:14px;font-weight:700}
+.hs-t-meta{margin-top:3px;font-size:12px;color:var(--soft)}
+.hs-t-reply{margin-top:10px;padding:11px 13px;border-radius:12px;background:var(--brand-soft);border-left:3px solid var(--brand)}
+.hs-t-reply b{font-size:11.5px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;color:var(--brand)}
+.hs-t-reply p{margin:4px 0 0;font-size:13px;line-height:1.6;color:var(--ink);white-space:pre-wrap}
+
 /* ---------- Motion ---------- */
 @keyframes hdrShine{0%,60%{left:-60%}100%{left:130%}}
 @keyframes hdrRing{0%,100%{transform:rotate(0)}10%{transform:rotate(16deg)}20%{transform:rotate(-14deg)}30%{transform:rotate(11deg)}40%{transform:rotate(-8deg)}50%{transform:rotate(5deg)}60%{transform:rotate(0)}}
@@ -1453,6 +1904,14 @@ const css = `
   .hdr-alert-cta{order:2;flex:1}
   .hdr-alert-x{order:0;margin-left:auto}
   .hdr-modal{padding:18px;border-radius:22px}
+  .hs-overlay{align-items:flex-end;padding:0}
+  .hs-modal{width:100%;max-height:94vh;max-height:94dvh;padding:0;border-radius:24px 24px 0 0}
+  .hs-head{padding:18px 16px 12px}
+  .hs-tabs{padding:0 8px}
+  .hs-tab{flex:1;padding:12px 6px;font-size:13px}
+  .hs-body{padding:14px 16px 22px}
+  .hs-channels{grid-template-columns:1fr}
+  .hs-done-actions{flex-direction:column-reverse}
   .hm-foot{flex-direction:column-reverse;align-items:stretch}
   .hm-foot-right{width:100%}
   .hm-foot-right .hm-btn{flex:1}
