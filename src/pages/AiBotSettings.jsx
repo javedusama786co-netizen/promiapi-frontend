@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence, MotionConfig } from "framer-motion";
 import axios from "axios";
+import CustomFieldsSettings from "./CustomFieldsSettings"; // 🧩 custom field manager (same folder)
 
 // 🌐 Dynamic Base URL Setup with Ngrok Support
 const API_BASE_URL = import.meta.env.VITE_API_URL || "https://api.promiapi.com"; // default fallback
@@ -94,6 +95,14 @@ const Icons = {
       <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
       <polyline points="15 3 21 3 21 9" />
       <line x1="10" y1="14" x2="21" y2="3" />
+    </svg>
+  ),
+  Users: () => (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
     </svg>
   ),
   ChevronDown: () => (
@@ -224,7 +233,7 @@ function Field({ label, value, hint, children }) {
 }
 
 
-function AiBotSettings() {
+function AiBotSettings({ onOpenCustomFields } = {}) {
   const [openSection, setOpenSection] = useState("general");
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -273,6 +282,11 @@ function AiBotSettings() {
   // Handover & Delay State
   const [handoverKeyword, setHandoverKeyword] = useState("");
   const [responseDelay, setResponseDelay] = useState(0);
+
+  // 🧩 Contact data & custom fields (saved through /api/custom-fields/ai-settings)
+  const [contactData, setContactData] = useState({ readEnabled: true, writeEnabled: true, askForMissing: false, overwriteManual: false });
+  const [contactDataLoaded, setContactDataLoaded] = useState(false);
+  const [showFieldsManager, setShowFieldsManager] = useState(false);
 
   // Axios Custom Config for Ngrok
   const getAxiosConfig = () => {
@@ -343,6 +357,22 @@ function AiBotSettings() {
     fetchSettings();
   }, []);
 
+  // 🧩 load the contact data switches (a failure here never blocks the rest of the page)
+  useEffect(() => {
+    const fetchContactData = async () => {
+      try {
+        const res = await axios.get(`${API_BASE_URL}/api/custom-fields/ai-settings`, getAxiosConfig());
+        if (res.data?.success && res.data.contactData) {
+          setContactData((prev) => ({ ...prev, ...res.data.contactData }));
+          setContactDataLoaded(true);
+        }
+      } catch (err) {
+        console.error("Failed to fetch contact data switches:", err);
+      }
+    };
+    fetchContactData();
+  }, []);
+
   const toggleSection = (section) => {
     setOpenSection(openSection === section ? null : section);
   };
@@ -389,7 +419,18 @@ function AiBotSettings() {
       const res = await axios.post(`${API_BASE_URL}/api/ai-bot/settings`, payload, getAxiosConfig());
 
       if (res.data?.success) {
-        alert("Settings saved successfully! 🎉");
+        // 🧩 the contact data switches have their own endpoint (the AI settings route does not know them)
+        let contactNote = "";
+        if (contactDataLoaded) {
+          try {
+            await axios.put(`${API_BASE_URL}/api/custom-fields/ai-settings`, contactData, getAxiosConfig());
+          } catch (cdErr) {
+            if (cdErr.response?.status !== 403) {
+              contactNote = "\n(The contact data switches could not be saved: " + (cdErr.response?.data?.message || cdErr.message) + ")";
+            }
+          }
+        }
+        alert("Settings saved successfully! 🎉" + contactNote);
       }
     } catch (err) {
       console.error("Error saving configuration:", err);
@@ -687,6 +728,56 @@ function AiBotSettings() {
               </Field>
             </Section>
 
+            {/* 7. CONTACT DATA & CUSTOM FIELDS */}
+            <Section id="contactData" {...sp} icon={<Icons.Users />} tone="#10b981"
+              title="Contact Data & Custom Fields" sub="What the AI may read and save about each customer"
+              status={contactData.readEnabled || contactData.writeEnabled}>
+              <Switch
+                checked={contactData.readEnabled}
+                onChange={(e) => setContactData((p) => ({ ...p, readEnabled: e.target.checked }))}
+                title="AI can read the customer's saved details"
+                hint="Name, city, budget … are added to the AI's prompt, so it never asks for something you already know."
+              />
+              <Reveal show={contactData.readEnabled}>
+                <Switch
+                  checked={contactData.askForMissing}
+                  onChange={(e) => setContactData((p) => ({ ...p, askForMissing: e.target.checked }))}
+                  title="AI may ask for one missing detail"
+                  hint="When it fits the conversation, the AI politely asks for ONE missing detail at a time (never passwords, OTPs or card numbers)."
+                />
+              </Reveal>
+              <Switch
+                checked={contactData.writeEnabled}
+                onChange={(e) => setContactData((p) => ({ ...p, writeEnabled: e.target.checked }))}
+                title="AI can save what the customer tells it"
+                hint="When a customer says “my name is Ali, I live in Lahore”, the AI saves it on the contact (only fields that allow it)."
+              />
+              <Reveal show={contactData.writeEnabled}>
+                <Switch
+                  checked={contactData.overwriteManual}
+                  onChange={(e) => setContactData((p) => ({ ...p, overwriteManual: e.target.checked }))}
+                  title="Allow the AI to overwrite values your team entered"
+                  hint="Off (recommended): values typed by your team, imported or coming from your store are never changed by the AI. It only fills empty fields."
+                />
+              </Reveal>
+
+              <div className="ab-cf-row">
+                <button
+                  type="button"
+                  className="ab-cf-manage"
+                  onClick={() => (onOpenCustomFields ? onOpenCustomFields() : setShowFieldsManager((v) => !v))}
+                >
+                  {showFieldsManager && !onOpenCustomFields ? "Hide custom fields" : "Manage custom fields"}
+                </button>
+                <small className="ab-hint">Create fields such as City or Budget and choose which ones the AI may read or save.</small>
+              </div>
+              {showFieldsManager && !onOpenCustomFields && (
+                <div className="ab-cf-embed">
+                  <CustomFieldsSettings embedded />
+                </div>
+              )}
+            </Section>
+
             {/* SAVE */}
             <div className="ab-savebar">
               <motion.button
@@ -933,6 +1024,13 @@ const css = `
 /* NOTE: the old blanket "prefers-reduced-motion: reduce" rule is removed on purpose.
    Many Windows/Linux PCs report reduced-motion (animations off in OS settings, remote desktop, power saver),
    which killed the hero orbs / rotating logo ring on desktop while phones still showed them. */
+/* ---------- Contact data & custom fields ---------- */
+.ab-cf-row{display:flex;flex-wrap:wrap;align-items:center;gap:12px}
+.ab-cf-manage{padding:10px 18px;border-radius:12px;border:1px solid color-mix(in srgb,#10b981 45%,#dbe2f4);background:#ecfdf5;color:#047857;
+  font:inherit;font-size:13.5px;font-weight:700;cursor:pointer;transition:.15s}
+.ab-cf-manage:hover{background:#d1fae5;border-color:#10b981}
+.ab-cf-manage:focus-visible{outline:3px solid rgba(16,185,129,.4);outline-offset:2px}
+.ab-cf-embed{margin-top:6px;padding-top:18px;border-top:1px dashed var(--line)}
 `;
 
 export default AiBotSettings;

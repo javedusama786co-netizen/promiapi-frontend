@@ -148,6 +148,7 @@ const PATHS = {
   download: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3",
   search: "M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM21 21l-4.35-4.35",
   refresh: "M23 4v6h-6M1 20v-6h6M3.5 9a9 9 0 0 1 14.9-3.4L23 10M1 14l4.6 4.4A9 9 0 0 0 20.5 15",
+  support: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z",
   mail: "M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM22 6l-10 7L2 6",
   edit: "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z",
   trash: "M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6",
@@ -358,6 +359,8 @@ const CSS = `
  .main{padding:18px 14px 60px}.top h1{font-size:21px}.kv{grid-template-columns:110px 1fr}
 }
 @media(prefers-reduced-motion:reduce){.ap *{transition:none!important}}
+
+.tk-msg{white-space:pre-wrap;word-break:break-word;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:12px 14px;font-size:13.5px;line-height:1.6;max-height:220px;overflow-y:auto}
 `;
 
 /* ───────────────────────── small UI pieces ───────────────────────── */
@@ -382,6 +385,12 @@ const KV = ({ rows }) => (
     ))}
   </dl>
 );
+
+/* ───────────────────────── support tickets ───────────────────────── */
+const T_STATUS = { open: "Open", in_progress: "In progress", resolved: "Resolved", closed: "Closed" };
+const T_TONE = { open: "warn", in_progress: "acc", resolved: "good", closed: "mute" };
+const T_CAT = { technical: "Technical", whatsapp: "WhatsApp connection", campaigns: "Campaigns", billing: "Billing", feature: "Feature request", other: "Other" };
+const tInitials = (t) => String(t.name || t.email || "?").split(/[\s@]+/).map((p) => p[0]).slice(0, 2).join("").toUpperCase();
 
 /* ───────────────────────── main component ───────────────────────── */
 function AdminPanel() {
@@ -417,6 +426,15 @@ function AdminPanel() {
   const [printModal, setPrintModal] = useState(null);
   const [remindFilter, setRemindFilter] = useState("expiring");
 
+  // support tickets
+  const [tickets, setTickets] = useState([]);
+  const [ticketCounts, setTicketCounts] = useState({});
+  const [ticketsLoading, setTicketsLoading] = useState(false);
+  const [ticketsError, setTicketsError] = useState("");
+  const [tFilter, setTFilter] = useState("open");
+  const [tQuery, setTQuery] = useState("");
+  const [ticketModal, setTicketModal] = useState(null);
+
   const notify = useCallback((msg, type = "") => {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 3200);
@@ -437,6 +455,23 @@ function AdminPanel() {
   }, []);
   useEffect(() => { load(); }, [load]);
 
+  const loadTickets = useCallback(async (silent) => {
+    try {
+      if (!silent) setTicketsLoading(true);
+      setTicketsError("");
+      const res = await api("get", "/support/tickets?limit=300");
+      setTickets(res.data?.tickets || []);
+      setTicketCounts(res.data?.counts || {});
+    } catch (err) {
+      setTicketsError(
+        err.response?.status === 404
+          ? "Support tickets are not connected on the server yet. Add supportAdmin.js to the admin routes (one line), then refresh."
+          : err.response?.data?.message || "Could not load support tickets."
+      );
+    } finally { setTicketsLoading(false); }
+  }, []);
+  useEffect(() => { loadTickets(true); }, [loadTickets]);
+
   const warn = Number(cfg.warn) || 7;
   const cols = useMemo(() => buildCols(warn), [warn]);
   const openUser = users.find((u) => u._id === openId) || null;
@@ -453,6 +488,34 @@ function AdminPanel() {
       return false;
     }
   };
+
+  const saveTicket = async (resolve) => {
+    const m = ticketModal;
+    if (!m) return;
+    try {
+      await api("patch", `/support/tickets/${m.t._id}`, { status: resolve ? "resolved" : m.status, reply: m.reply });
+      notify(resolve ? "Reply saved and ticket resolved" : "Ticket updated", "good");
+      setTicketModal(null);
+      await loadTickets(true);
+    } catch (err) {
+      notify(err.response?.data?.message || "Could not update the ticket.", "bad");
+    }
+  };
+
+  const deleteTicket = (t) =>
+    setConfirm({
+      title: "Delete this ticket?", text: `${t.ticketNo} (${t.subject}) will be removed permanently.`, label: "Delete ticket", danger: true,
+      go: async () => {
+        try { await api("delete", `/support/tickets/${t._id}`); notify("Ticket deleted", "good"); setTicketModal(null); await loadTickets(true); }
+        catch (err) { notify(err.response?.data?.message || "Could not delete the ticket.", "bad"); }
+      },
+    });
+
+  const shownTickets = useMemo(() => {
+    const qq = tQuery.trim().toLowerCase();
+    return tickets.filter((t) => (tFilter === "all" || t.status === tFilter) &&
+      (!qq || [t.ticketNo, t.subject, t.email, t.name, t.message].some((v) => String(v || "").toLowerCase().includes(qq))));
+  }, [tickets, tFilter, tQuery]);
 
   const setStatus = (u, status) =>
     status === "Terminated"
@@ -547,12 +610,14 @@ function AdminPanel() {
     { id: "overview", label: "Overview", icon: "overview" },
     { id: "users", label: "Users", icon: "users" },
     { id: "reminders", label: "Renewals", icon: "bell", pill: stats.states.expiring + stats.states.expired || null },
+    { id: "support", label: "Support", icon: "support", pill: ticketCounts.open || null },
     { id: "settings", label: "Settings", icon: "settings" },
   ];
   const titles = {
     overview: ["Overview", "How your platform is doing right now."],
     users: ["Users", "Every account, with full control over access and plans."],
     reminders: ["Renewals", "Who needs a reminder, and who has already lapsed."],
+    support: ["Support", "Requests your customers sent from Help & Support."],
     settings: ["Settings", "Appearance and how this panel counts things."],
   };
 
@@ -586,7 +651,7 @@ function AdminPanel() {
         <header className="top">
           <div><h1>{titles[tab][0]}</h1><p>{titles[tab][1]}</p></div>
           <div className="row">
-            <button className="btn" onClick={() => load()} disabled={loading}><Ico n="refresh" s={16} />Refresh</button>
+            <button className="btn" onClick={() => { load(); loadTickets(); }} disabled={loading || ticketsLoading}><Ico n="refresh" s={16} />Refresh</button>
             <button className="btn" onClick={() => setPrintModal({ rows: filtered, title: "User report" })}><Ico n="print" s={16} />Print report</button>
           </div>
         </header>
@@ -753,6 +818,57 @@ function AdminPanel() {
           </>
         )}
 
+        {/* ───── SUPPORT ───── */}
+        {tab === "support" && (
+          <>
+            {ticketsError && <div className="alert bad" style={{ marginBottom: 16 }}>{ticketsError}</div>}
+            <div className="kpis">
+              <div className="card kpi"><span>Open</span><b style={{ color: "var(--warn)" }}>{ticketCounts.open || 0}</b></div>
+              <div className="card kpi"><span>In progress</span><b>{ticketCounts.in_progress || 0}</b></div>
+              <div className="card kpi"><span>Resolved</span><b style={{ color: "var(--good)" }}>{ticketCounts.resolved || 0}</b></div>
+              <div className="card kpi"><span>All tickets</span><b>{ticketCounts.total || 0}</b></div>
+            </div>
+            <div className="card" style={{ overflow: "hidden" }}>
+              <div className="tools">
+                <div className="seg">
+                  {[["open", "Open"], ["in_progress", "In progress"], ["resolved", "Resolved"], ["closed", "Closed"], ["all", "All"]].map(([k, l]) => (
+                    <button key={k} className={tFilter === k ? "on" : ""} onClick={() => setTFilter(k)}>{l}</button>
+                  ))}
+                </div>
+                <span style={{ flex: 1 }} />
+                <div className="search" style={{ minWidth: 220 }}>
+                  <Ico n="search" s={16} />
+                  <input className="inp" value={tQuery} onChange={(e) => setTQuery(e.target.value)} placeholder="Search ticket, name, email…" />
+                </div>
+              </div>
+              <div className="tbl-wrap">
+                <table className="tbl" style={{ minWidth: 820 }}>
+                  <thead><tr><th>Ticket</th><th>From</th><th>Category</th><th>Subject</th><th>Status</th><th>Received</th><th /></tr></thead>
+                  <tbody>
+                    {ticketsLoading && tickets.length === 0 ? (
+                      <tr><td colSpan="7" className="empty">Loading tickets…</td></tr>
+                    ) : shownTickets.length === 0 ? (
+                      <tr><td colSpan="7" className="empty">{tickets.length === 0 ? "No support requests yet. They will appear here as soon as a customer writes in." : "No tickets match this filter."}</td></tr>
+                    ) : shownTickets.map((t) => (
+                      <tr key={t._id}>
+                        <td><b>{t.ticketNo}</b></td>
+                        <td><div className="who"><div className="av">{tInitials(t)}</div><div><b>{t.name || "Customer"}</b><small>{t.email}</small></div></div></td>
+                        <td><Tag tone="mute">{T_CAT[t.category] || t.category}</Tag></td>
+                        <td style={{ maxWidth: 280 }}><div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.subject}</div></td>
+                        <td><Tag tone={T_TONE[t.status]}>{T_STATUS[t.status] || t.status}</Tag></td>
+                        <td className="mute">{fmtDateTime(t.createdAt)}</td>
+                        <td><div className="row" style={{ justifyContent: "flex-end", flexWrap: "nowrap" }}>
+                          <button className="btn sm" onClick={() => setTicketModal({ t, status: t.status, reply: t.reply || "" })}>Open</button>
+                        </div></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </>
+        )}
+
         {/* ───── SETTINGS ───── */}
         {tab === "settings" && (
           <div className="card" style={{ maxWidth: 720 }}><div className="card-b" style={{ paddingTop: 6 }}>
@@ -870,6 +986,39 @@ function AdminPanel() {
             <div className="foot">
               <button className="btn" onClick={() => setEditModal(null)}>Cancel</button>
               <button className="btn pri" onClick={async () => { if (await run(() => api("patch", `/users/${editModal.user._id}`, editModal.form), "Profile saved")) setEditModal(null); }}>Save changes</button>
+            </div>
+          </Modal>
+        )}
+
+        {ticketModal && (
+          <Modal onClose={() => setTicketModal(null)} key="ticket" wide>
+            <div className="row" style={{ justifyContent: "space-between", marginBottom: 4 }}>
+              <h3>{ticketModal.t.ticketNo}</h3>
+              <Tag tone={T_TONE[ticketModal.t.status]}>{T_STATUS[ticketModal.t.status]}</Tag>
+            </div>
+            <p className="mute" style={{ marginBottom: 14 }}>
+              {ticketModal.t.name || "Customer"} · {ticketModal.t.email || "no email"}{ticketModal.t.role ? ` · ${ticketModal.t.role}` : ""} · {T_CAT[ticketModal.t.category] || ticketModal.t.category} · {fmtDateTime(ticketModal.t.createdAt)}
+            </p>
+            <div className="field"><label>Subject</label><div style={{ fontWeight: 700 }}>{ticketModal.t.subject}</div></div>
+            <div className="field"><label>Message</label>
+              <div className="tk-msg">{ticketModal.t.message}</div>
+            </div>
+            {ticketModal.t.pageUrl && <p className="mute" style={{ fontSize: 12, margin: "-4px 0 14px", wordBreak: "break-all" }}>Sent from: {ticketModal.t.pageUrl}</p>}
+            <div className="field"><label>Status</label>
+              <div className="seg">
+                {Object.entries(T_STATUS).map(([k, l]) => (
+                  <button key={k} className={ticketModal.status === k ? "on" : ""} onClick={() => setTicketModal({ ...ticketModal, status: k })}>{l}</button>
+                ))}
+              </div>
+            </div>
+            <div className="field"><label>Your reply (the customer sees this under “My tickets”)</label>
+              <textarea className="inp" rows={5} maxLength={4000} style={{ resize: "vertical" }} value={ticketModal.reply} onChange={(e) => setTicketModal({ ...ticketModal, reply: e.target.value })} placeholder="Write your answer here…" />
+            </div>
+            <div className="foot">
+              <button className="btn" style={{ marginRight: "auto", color: "var(--bad)" }} onClick={() => deleteTicket(ticketModal.t)}>Delete</button>
+              <button className="btn" onClick={() => setTicketModal(null)}>Close</button>
+              <button className="btn" onClick={() => saveTicket(false)}>Save</button>
+              <button className="btn pri" onClick={() => saveTicket(true)} disabled={!ticketModal.reply.trim()}>Reply &amp; resolve</button>
             </div>
           </Modal>
         )}

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { Helmet, HelmetProvider } from "react-helmet-async";
 import { GoogleOAuthProvider } from "@react-oauth/google";
 
@@ -31,6 +31,7 @@ import WhatsAppSetup from "./pages/WhatsAppSetup";
 import BotRepliesList from "./pages/BotRepliesList";
 import CreateBotReply from "./pages/CreateBotReply";
 import AiBotSettings from "./pages/AiBotSettings"; 
+import CustomFieldsSettings from "./pages/CustomFieldsSettings"; // 🧩 custom contact fields (city, budget ...)
 import Onboarding from "./pages/Onboarding"; 
 
 import Sidebar from "./components/sidebar";
@@ -254,6 +255,7 @@ function DynamicDashboardTitle() {
     case "/dashboard/qr": pageTitle = "QR Code Studio"; break;
     case "/dashboard/settings/general": pageTitle = "General Settings"; break;
     case "/dashboard/settings/ai-chatbot": pageTitle = "AI Chatbot Settings"; break;
+    case "/dashboard/settings/custom-fields": pageTitle = "Custom Fields"; break;
     case "/dashboard/settings/whatsapp": pageTitle = "WhatsApp Setup"; break;
     case "/dashboard/bot-replies": pageTitle = "Bot Replies"; break;
     case "/dashboard/bot-replies/new": pageTitle = "Create Bot Reply"; break;
@@ -318,6 +320,12 @@ function DashboardLayout() {
   );
 }
 
+// ⚙️ AI settings page: its "Manage custom fields" button opens the dedicated Custom Fields page
+function AiBotSettingsRoute() {
+  const navigate = useNavigate();
+  return <AiBotSettings onOpenCustomFields={() => navigate("/dashboard/settings/custom-fields")} />;
+}
+
 function AppContent() {
   const [isDarkMode, setIsDarkMode] = useState(false);
   const toggleTheme = () => setIsDarkMode(!isDarkMode);
@@ -366,7 +374,8 @@ function AppContent() {
             <Route path="/dashboard/qr" element={<QRCodeGenerator />} />
             <Route path="/dashboard/settings/general" element={<GeneralSettings />} />
             
-            <Route path="/dashboard/settings/ai-chatbot" element={<AiBotSettings />} />
+            <Route path="/dashboard/settings/ai-chatbot" element={<AiBotSettingsRoute />} />
+            <Route path="/dashboard/settings/custom-fields" element={<CustomFieldsSettings />} />
             <Route path="/dashboard/settings/whatsapp" element={<WhatsAppSetup />} />
 
             {/* PROTECTED PREMIUM FEATURES */}
